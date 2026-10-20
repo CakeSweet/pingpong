@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Ping Pong Multiplayer</title>
+
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: white;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-top: 15px;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            color: #00e5ff;
+            text-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+        }
+
+        /* ── Menu ── */
+        #menu {
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #menu input {
+            background: #1a1a2e;
+            border: 1px solid #00e5ff;
+            color: white;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 260px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #menu input:focus {
+            border-color: #76ff03;
+        }
+
+        #menu button {
+            background: linear-gradient(135deg, #00e5ff, #0077b6);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.3s;
+            letter-spacing: 1px;
+        }
+
+        #menu button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+        }
+
+        #status {
+            font-size: 13px;
+            color: #aaa;
+            width: 100%;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        /* ── Canvas ── */
+        #gameCanvas {
+            border: 2px solid #00e5ff;
+            border-radius: 4px;
+            box-shadow:
+                0 0 30px rgba(0, 229, 255, 0.15),
+                inset 0 0 60px rgba(0, 0, 0, 0.5);
+            margin-top: 5px;
+        }
+
+        /* ── Scoreboard ── */
+        #scoreboard {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            font-size: 20px;
+            margin-top: 10px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        #scoreboard .p1 {
+            color: #00e5ff;
+        }
+
+        #scoreboard .p2 {
+            color: #ff1744;
+        }
+
+        /* ── Info text ── */
+        #info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🏓 Ping Pong</h1>
+
+    <div id="menu">
+
+        <button id="hostButton">
+            Criar Sala
+        </button>
+
+        <input
+            id="roomId"
+            placeholder="Cole o ID da sala aqui"
+        >
+
+        <button id="joinButton">
+            Entrar
+        </button>
+
+        <div id="status">
+            Iniciando...
+        </div>
+
+    </div>
+
+    <canvas
+        id="gameCanvas"
+        width="800"
+        height="500"
+    ></canvas>
+
+    <div id="scoreboard">
+        <span class="p1">Jogador 1: <span id="score1">0</span></span>
+        <span class="p2">Jogador 2: <span id="score2">0</span></span>
+    </div>
+
+    <div id="info">
+        W / S ou ↑ / ↓ para mover a raquete
+    </div>
+
+    <script>
+        (() => {
+
+            // ══════════════════════════════════════
+            //  Configurações do jogo
+            // ══════════════════════════════════════
+
+            const CANVAS_W = 800;
+            const CANVAS_H = 500;
+
+            const PADDLE_W = 12;
+            const PADDLE_H = 90;
+            const PADDLE_SPEED = 6;
+            const PADDLE_MARGIN = 20;
+
+            const BALL_RADIUS = 8;
+            const BALL_INITIAL_SPEED = 5;
+            const BALL_MAX_SPEED = 12;
+            const BALL_ACCELERATION = 0.3;
+
+            const WINNING_SCORE = 7;
+
+            // ══════════════════════════════════════
+            //  Canvas & contexto
+            // ══════════════════════════════════════
+
+            const canvas = document.getElementById("gameCanvas");
+            const ctx = canvas.getContext("2d");
+
+            // ══════════════════════════════════════
+            //  PeerJS / conexão P2P
+            // ══════════════════════════════════════
+
+            const peer = new Peer();
+            let connection = null;
+            let isHost = false;
+            let connected = false;
+
+            const statusEl = document.getElementById("status");
+            const roomInput = document.getElementById("roomId");
+            const score1El = document.getElementById("score1");
+            const score2El = document.getElementById("score2");
+
+            // ══════════════════════════════════════
+            //  Estado do jogo
+            // ══════════════════════════════════════
+
+            const state = {
+                paddle1Y: CANVAS_H / 2 - PADDLE_H / 2,   // host (esquerda)
+                paddle2Y: CANVAS_H / 2 - PADDLE_H / 2,   // guest (direita)
+
+                ballX: CANVAS_W / 2,
+                ballY: CANVAS_H / 2,
+                ballVX: BALL_INITIAL_SPEED,
+                ballVY: BALL_INITIAL_SPEED * 0.6,
+
+                score1: 0,
+                score2: 0,
+
+                running: false,
+                gameOver: false,
+                winner: "",
+
+                countdown: 0   // 3, 2, 1...
+            };
+
+            // ══════════════════════════════════════
+            //  Input do teclado
+            // ══════════════════════════════════════
+
+            const keys = {};
+
+            window.addEventListener("keydown", e => {
+                keys[e.key.toLowerCase()] = true;
+                // Prevenir scroll com setas
+                if (["arrowup", "arrowdown"].includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                }
+            });
+
+            window.addEventListener("keyup", e => {
+                keys[e.key.toLowerCase()] = false;
+            });
+
+            // ══════════════════════════════════════
+            //  Botões de menu
+            // ══════════════════════════════════════
+
+            document.getElementById("hostButton")
+                .addEventListener("click", () => {
+                    if (!peer.id) {
+                        statusEl.textContent = "Aguardando PeerJS...";
+                        return;
+                    }
+
+                    isHost = true;
+                    roomInput.value = peer.id;
+                    statusEl.textContent = "Sala criada! Compartilhe o ID: " + peer.id;
+
+                    // Copiar para clipboard
+                    navigator.clipboard.writeText(peer.id).catch(() => {});
+                });
+
+            document.getElementById("joinButton")
+                .addEventListener("click", () => {
+                    const roomId = roomInput.value.trim();
+                    if (!roomId) return;
+
+                    isHost = false;
+                    connection = peer.connect(roomId, { reliable: true });
+                    configureConnection();
+                    statusEl.textContent = "Conectando...";
+                });
+
+            // Host recebe conexão
+            peer.on("connection", conn => {
+                connection = conn;
+                configureConnection();
+            });
+
+            peer.on("open", id => {
+                statusEl.textContent = "Pronto. Crie uma sala ou entre em uma.";
+            });
+
+            peer.on("error", err => {
+                statusEl.textContent = "Erro: " + err.type;
+            });
+
+            // ══════════════════════════════════════
+            //  Configuração da conexão P2P
+            // ══════════════════════════════════════
+
+            function configureConnection() {
+
+                connection.on("open", () => {
+                    connected = true;
+                    statusEl.textContent = "Conectado! Preparando...";
+
+                    if (isHost) {
+                        startCountdown();
+                    }
+                });
+
+                connection.on("data", data => {
+
+                    switch (data.type) {
+
+                        // O guest envia a posição da sua raquete
+                        case "paddleMove":
+                            if (isHost) {
+                                state.paddle2Y = data.y;
+                            }
+                            break;
+
+                        // O host envia a posição da raquete dele
+                        case "hostPaddle":
+                            if (!isHost) {
+                                state.paddle1Y = data.y;
+                            }
+                            break;
+
+                        // O host envia o estado completo da bola e placar
+                        case "gameState":
+                            if (!isHost) {
+                                state.ballX = data.ballX;
+                                state.ballY = data.ballY;
+                                state.ballVX = data.ballVX;
+                                state.ballVY = data.ballVY;
+                                state.score1 = data.score1;
+                                state.score2 = data.score2;
+                                state.running = data.running;
+                                state.gameOver = data.gameOver;
+                                state.winner = data.winner || "";
+                                state.countdown = data.countdown || 0;
+                                updateScoreDisplay();
+                            }
+                            break;
+                    }
+
+                });
+
+                connection.on("close", () => {
+                    connected = false;
+                    state.running = false;
+                    statusEl.textContent = "Jogador desconectou.";
+                });
+
+            }
+
+            // ══════════════════════════════════════
+            //  Contagem regressiva (host controla)
+            // ══════════════════════════════════════
+
+            function startCountdown() {
+                resetBall();
+                state.running = false;
+                state.gameOver = false;
+                state.winner = "";
+                state.countdown = 3;
+
+                const interval = setInterval(() => {
+                    state.countdown--;
+                    if (state.countdown <= 0) {
+                        clearInterval(interval);
+                        state.running = true;
+                    }
+                    broadcastState();
+                }, 1000);
+
+                broadcastState();
+            }
+
+            // ══════════════════════════════════════
+            //  Reset da bola
+            // ══════════════════════════════════════
+
+            function resetBall() {
+                state.ballX = CANVAS_W / 2;
+                state.ballY = CANVAS_H / 2;
+
+                const direction = Math.random() > 0.5 ? 1 : -1;
+                const angle = (Math.random() * 0.6 - 0.3); // -0.3 a 0.3 rad
+                state.ballVX = BALL_INITIAL_SPEED * direction;
+                state.ballVY = BALL_INITIAL_SPEED * Math.sin(angle);
+            }
+
+            // ══════════════════════════════════════
+            //  Broadcast do estado (host → guest)
+            // ══════════════════════════════════════
+
+            function broadcastState() {
+                if (connection && connection.open && isHost) {
+                    connection.send({
+                        type: "gameState",
+                        ballX: state.ballX,
+                        ballY: state.ballY,
+                        ballVX: state.ballVX,
+                        ballVY: state.ballVY,
+                        score1: state.score1,
+                        score2: state.score2,
+                        running: state.running,
+                        gameOver: state.gameOver,
+                        winner: state.winner,
+                        countdown: state.countdown
+                    });
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Atualizar placar na tela
+            // ══════════════════════════════════════
+
+            function updateScoreDisplay() {
+                score1El.textContent = state.score1;
+                score2El.textContent = state.score2;
+            }
+
+            // ══════════════════════════════════════
+            //  Loop principal
+            // ══════════════════════════════════════
+
+            let lastBroadcast = 0;
+            const BROADCAST_INTERVAL = 1000 / 60; // ~60fps
+
+            function gameLoop(timestamp) {
+
+                // ── Mover minha raquete ──
+                handleMyPaddle();
+
+                // ── Física da bola (só o host calcula) ──
+                if (isHost && state.running && !state.gameOver) {
+                    updateBall();
+                }
+
+                // ── Broadcast periódico ──
+                if (timestamp - lastBroadcast >= BROADCAST_INTERVAL) {
+                    lastBroadcast = timestamp;
+
+                    if (connected && isHost) {
+                        // Host envia a posição da raquete dele
+                        connection.send({
+                            type: "hostPaddle",
+                            y: state.paddle1Y
+                        });
+                        broadcastState();
+                    }
+                }
+
+                // ── Desenhar ──
+                render();
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            // ══════════════════════════════════════
+            //  Mover a própria raquete
+            // ══════════════════════════════════════
+
+            function handleMyPaddle() {
+                let moved = false;
+
+                if (isHost) {
+                    // Host controla paddle1 (esquerda)
+                    if (keys["w"] || keys["arrowup"]) {
+                        state.paddle1Y -= PADDLE_SPEED;
+                        moved = true;
+                    }
+                    if (keys["s"] || keys["arrowdown"]) {
+                        state.paddle1Y += PADDLE_SPEED;
+                        moved = true;
+                    }
+                    state.paddle1Y = clamp(state.paddle1Y, 0, CANVAS_H - PADDLE_H);
+                } else {
+                    // Guest controla paddle2 (direita)
+                    if (keys["w"] || keys["arrowup"]) {
+                        state.paddle2Y -= PADDLE_SPEED;
+                        moved = true;
+                    }
+                    if (keys["s"] || keys["arrowdown"]) {
+                        state.paddle2Y += PADDLE_SPEED;
+                        moved = true;
+                    }
+                    state.paddle2Y = clamp(state.paddle2Y, 0, CANVAS_H - PADDLE_H);
+
+                    // Enviar posição para o host
+                    if (moved && connection && connection.open) {
+                        connection.send({
+                            type: "paddleMove",
+                            y: state.paddle2Y
+                        });
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Física da bola (host only)
+            // ══════════════════════════════════════
+
+            function updateBall() {
+
+                state.ballX += state.ballVX;
+                state.ballY += state.ballVY;
+
+                // ── Colisão topo/baixo ──
+                if (state.ballY - BALL_RADIUS <= 0) {
+                    state.ballY = BALL_RADIUS;
+                    state.ballVY = Math.abs(state.ballVY);
+                }
+                if (state.ballY + BALL_RADIUS >= CANVAS_H) {
+                    state.ballY = CANVAS_H - BALL_RADIUS;
+                    state.ballVY = -Math.abs(state.ballVY);
+                }
+
+                // ── Colisão raquete esquerda (paddle1) ──
+                const p1Left = PADDLE_MARGIN;
+                const p1Right = PADDLE_MARGIN + PADDLE_W;
+                const p1Top = state.paddle1Y;
+                const p1Bottom = state.paddle1Y + PADDLE_H;
+
+                if (
+                    state.ballVX < 0 &&
+                    state.ballX - BALL_RADIUS <= p1Right &&
+                    state.ballX + BALL_RADIUS >= p1Left &&
+                    state.ballY >= p1Top &&
+                    state.ballY <= p1Bottom
+                ) {
+                    state.ballX = p1Right + BALL_RADIUS;
+
+                    // Calcular ângulo baseado em onde bateu na raquete
+                    const hitPos = (state.ballY - p1Top) / PADDLE_H; // 0..1
+                    const angle = (hitPos - 0.5) * (Math.PI / 3);    // -60° a 60°
+
+                    const speed = Math.min(
+                        Math.sqrt(state.ballVX ** 2 + state.ballVY ** 2) + BALL_ACCELERATION,
+                        BALL_MAX_SPEED
+                    );
+                    state.ballVX = speed * Math.cos(angle);
+                    state.ballVY = speed * Math.sin(angle);
+                }
+
+                // ── Colisão raquete direita (paddle2) ──
+                const p2Left = CANVAS_W - PADDLE_MARGIN - PADDLE_W;
+                const p2Right = CANVAS_W - PADDLE_MARGIN;
+                const p2Top = state.paddle2Y;
+                const p2Bottom = state.paddle2Y + PADDLE_H;
+
+                if (
+                    state.ballVX > 0 &&
+                    state.ballX + BALL_RADIUS >= p2Left &&
+                    state.ballX - BALL_RADIUS <= p2Right &&
+                    state.ballY >= p2Top &&
+                    state.ballY <= p2Bottom
+                ) {
+                    state.ballX = p2Left - BALL_RADIUS;
+
+                    const hitPos = (state.ballY - p2Top) / PADDLE_H;
+                    const angle = (hitPos - 0.5) * (Math.PI / 3);
+
+                    const speed = Math.min(
+                        Math.sqrt(state.ballVX ** 2 + state.ballVY ** 2) + BALL_ACCELERATION,
+                        BALL_MAX_SPEED
+                    );
+                    state.ballVX = -(speed * Math.cos(angle));
+                    state.ballVY = speed * Math.sin(angle);
+                }
+
+                // ── Gol esquerdo (ponto para jogador 2) ──
+                if (state.ballX - BALL_RADIUS <= 0) {
+                    state.score2++;
+                    updateScoreDisplay();
+                    checkWin();
+                    if (!state.gameOver) {
+                        startCountdown();
+                    }
+                }
+
+                // ── Gol direito (ponto para jogador 1) ──
+                if (state.ballX + BALL_RADIUS >= CANVAS_W) {
+                    state.score1++;
+                    updateScoreDisplay();
+                    checkWin();
+                    if (!state.gameOver) {
+                        startCountdown();
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Checar vitória
+            // ══════════════════════════════════════
+
+            function checkWin() {
+                if (state.score1 >= WINNING_SCORE) {
+                    state.gameOver = true;
+                    state.running = false;
+                    state.winner = "Jogador 1";
+                    broadcastState();
+                } else if (state.score2 >= WINNING_SCORE) {
+                    state.gameOver = true;
+                    state.running = false;
+                    state.winner = "Jogador 2";
+                    broadcastState();
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Reiniciar partida (host aperta Enter)
+            // ══════════════════════════════════════
+
+            window.addEventListener("keydown", e => {
+                if (e.key === "Enter" && isHost && state.gameOver && connected) {
+                    state.score1 = 0;
+                    state.score2 = 0;
+                    state.gameOver = false;
+                    state.winner = "";
+                    updateScoreDisplay();
+                    startCountdown();
+                }
+            });
+
+            // ══════════════════════════════════════
+            //  Renderização (Canvas)
+            // ══════════════════════════════════════
+
+            function render() {
+                // ── Fundo ──
+                ctx.fillStyle = "#0d1117";
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                // ── Linha central tracejada ──
+                ctx.setLineDash([10, 10]);
+                ctx.strokeStyle = "rgba(255,255,255,0.12)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(CANVAS_W / 2, 0);
+                ctx.lineTo(CANVAS_W / 2, CANVAS_H);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // ── Placar grande no fundo ──
+                ctx.fillStyle = "rgba(255,255,255,0.04)";
+                ctx.font = "bold 140px 'Segoe UI', Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(state.score1, CANVAS_W / 4, CANVAS_H / 2);
+                ctx.fillText(state.score2, (CANVAS_W / 4) * 3, CANVAS_H / 2);
+
+                // ── Raquete esquerda (Jogador 1) ──
+                drawPaddle(PADDLE_MARGIN, state.paddle1Y, "#00e5ff");
+
+                // ── Raquete direita (Jogador 2) ──
+                drawPaddle(CANVAS_W - PADDLE_MARGIN - PADDLE_W, state.paddle2Y, "#ff1744");
+
+                // ── Bola ──
+                if (state.running) {
+                    // Trilha da bola (glow)
+                    const gradient = ctx.createRadialGradient(
+                        state.ballX, state.ballY, 0,
+                        state.ballX, state.ballY, BALL_RADIUS * 3
+                    );
+                    gradient.addColorStop(0, "rgba(255, 255, 255, 0.3)");
+                    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS * 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Bola
+                    ctx.fillStyle = "#ffffff";
+                    ctx.shadowColor = "#ffffff";
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+
+                // ── Contagem regressiva ──
+                if (state.countdown > 0 && !state.gameOver) {
+                    ctx.fillStyle = "rgba(0, 229, 255, 0.9)";
+                    ctx.font = "bold 80px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#00e5ff";
+                    ctx.shadowBlur = 30;
+                    ctx.fillText(state.countdown, CANVAS_W / 2, CANVAS_H / 2);
+                    ctx.shadowBlur = 0;
+                }
+
+                // ── Mensagem de espera ──
+                if (!connected) {
+                    ctx.fillStyle = "rgba(255,255,255,0.5)";
+                    ctx.font = "24px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("Aguardando conexão...", CANVAS_W / 2, CANVAS_H / 2);
+                }
+
+                // ── Game Over ──
+                if (state.gameOver) {
+                    // Overlay escuro
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    // Texto de vitória
+                    ctx.fillStyle = "#ffea00";
+                    ctx.font = "bold 48px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#ffea00";
+                    ctx.shadowBlur = 20;
+                    ctx.fillText("🏆 " + state.winner + " venceu!", CANVAS_W / 2, CANVAS_H / 2 - 20);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "rgba(255,255,255,0.6)";
+                    ctx.font = "18px 'Segoe UI', Arial";
+                    ctx.fillText(
+                        isHost ? "Pressione ENTER para jogar novamente" : "Aguardando host reiniciar...",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 30
+                    );
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Desenhar raquete com efeito glow
+            // ══════════════════════════════════════
+
+            function drawPaddle(x, y, color) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+                ctx.fillStyle = color;
+
+                // Raquete com bordas arredondadas
+                const r = 4;
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + PADDLE_W - r, y);
+                ctx.quadraticCurveTo(x + PADDLE_W, y, x + PADDLE_W, y + r);
+                ctx.lineTo(x + PADDLE_W, y + PADDLE_H - r);
+                ctx.quadraticCurveTo(x + PADDLE_W, y + PADDLE_H, x + PADDLE_W - r, y + PADDLE_H);
+                ctx.lineTo(x + r, y + PADDLE_H);
+                ctx.quadraticCurveTo(x, y + PADDLE_H, x, y + PADDLE_H - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+            }
+
+            // ══════════════════════════════════════
+            //  Utilitário
+            // ══════════════════════════════════════
+
+            function clamp(val, min, max) {
+                return Math.max(min, Math.min(max, val));
+            }
+
+            // ══════════════════════════════════════
+            //  Iniciar game loop
+            // ══════════════════════════════════════
+
+            requestAnimationFrame(gameLoop);
+
+        })();
+    </script>
+
+</body>
+
+</html>
