@@ -1,0 +1,2156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>🏓 Ping Pong Multiplayer</title>
+
+    <!-- Favicon emoji 🏓 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏓</text></svg>">
+
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            color: white;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        h1 {
+            font-size: 26px;
+            margin-top: 12px;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            color: #00e5ff;
+            text-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+        }
+
+        /* ── Menu ── */
+        #menu {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        #menu input {
+            background: #1a1a2e;
+            border: 1px solid #00e5ff;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            width: 240px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #menu input:focus {
+            border-color: #76ff03;
+        }
+
+        #menu button {
+            background: linear-gradient(135deg, #00e5ff, #0077b6);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.3s;
+            letter-spacing: 1px;
+        }
+
+        #menu button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+        }
+
+        #switchButton {
+            background: linear-gradient(135deg, #76ff03, #2e7d32);
+        }
+
+        #switchButton:hover {
+            box-shadow: 0 0 15px rgba(118, 255, 3, 0.5);
+        }
+
+        #status {
+            font-size: 12px;
+            color: #aaa;
+            width: 100%;
+            text-align: center;
+            margin-top: 2px;
+        }
+
+        #minigameLabel {
+            font-size: 11px;
+            color: #888;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+
+        /* ── Nome do jogador ── */
+        #nameRow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 6px;
+        }
+
+        #nameRow label {
+            font-size: 13px;
+            color: #888;
+        }
+
+        #nameInput {
+            background: #1a1a2e;
+            border: 1px solid #444;
+            color: #00e5ff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 13px;
+            width: 160px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #nameInput:focus {
+            border-color: #00e5ff;
+        }
+
+        /* ── Layout principal ── */
+        #mainArea {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            margin-top: 4px;
+        }
+
+        /* ── Coluna do jogo ── */
+        #gameCol {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #gameCanvas {
+            border: 2px solid #00e5ff;
+            border-radius: 4px;
+            box-shadow:
+                0 0 30px rgba(0, 229, 255, 0.15),
+                inset 0 0 60px rgba(0, 0, 0, 0.5);
+        }
+
+        /* ── Scoreboard ── */
+        #scoreboard {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            font-size: 17px;
+            margin-top: 8px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        #scoreboard .p1 {
+            color: #00e5ff;
+        }
+
+        #scoreboard .p2 {
+            color: #ff1744;
+        }
+
+        #info {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #555;
+            text-align: center;
+        }
+
+        /* ── Chat ── */
+        #chatPanel {
+            width: 280px;
+            height: 504px;
+            display: flex;
+            flex-direction: column;
+            background: #111318;
+            border: 1px solid #222;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #chatHeader {
+            background: #161b22;
+            padding: 10px 14px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #00e5ff;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #chatMessages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #chatMessages::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        #chatMessages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #chatMessages::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        .chat-msg {
+            font-size: 13px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            animation: fadeIn 0.2s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-msg .sender {
+            font-weight: bold;
+            margin-right: 4px;
+        }
+
+        .chat-msg .sender.p1 {
+            color: #00e5ff;
+        }
+
+        .chat-msg .sender.p2 {
+            color: #ff1744;
+        }
+
+        .chat-msg .text {
+            color: #ccc;
+        }
+
+        .chat-msg.system {
+            color: #666;
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        #chatInputRow {
+            display: flex;
+            border-top: 1px solid #222;
+        }
+
+        #chatInput {
+            flex: 1;
+            background: #0d1117;
+            border: none;
+            color: white;
+            padding: 10px 12px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        #chatInput::placeholder {
+            color: #444;
+        }
+
+        #chatSendBtn {
+            background: #00e5ff;
+            border: none;
+            color: #000;
+            padding: 10px 14px;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #chatSendBtn:hover {
+            background: #00b8d4;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🏓 Ping Pong</h1>
+
+    <div id="menu">
+
+        <button id="hostButton">
+            Criar Sala
+        </button>
+
+        <input
+            id="roomId"
+            placeholder="Cole o ID da sala aqui"
+        >
+
+        <button id="joinButton">
+            Entrar
+        </button>
+
+        <button id="switchButton">
+            🎮 Trocar Minigame
+        </button>
+
+        <div id="status">
+            Iniciando...
+        </div>
+
+    </div>
+
+    <div id="minigameLabel">Minigame: Pong</div>
+
+    <div id="nameRow">
+        <label>Seu nome:</label>
+        <input
+            id="nameInput"
+            placeholder="Jogador"
+            maxlength="20"
+        >
+    </div>
+
+    <div id="mainArea">
+
+        <!-- Coluna do jogo -->
+        <div id="gameCol">
+            <canvas
+                id="gameCanvas"
+                width="800"
+                height="500"
+            ></canvas>
+
+            <div id="scoreboard">
+                <span class="p1"><span id="name1Display">Jogador 1</span>: <span id="score1">0</span></span>
+                <span class="p2"><span id="name2Display">Jogador 2</span>: <span id="score2">0</span></span>
+            </div>
+
+            <div id="info">
+                W / S ou ↑ / ↓ para mover a raquete
+            </div>
+        </div>
+
+        <!-- Painel de chat -->
+        <div id="chatPanel">
+            <div id="chatHeader">💬 Chat</div>
+            <div id="chatMessages"></div>
+            <div id="chatInputRow">
+                <input
+                    id="chatInput"
+                    placeholder="Digite uma mensagem..."
+                    maxlength="200"
+                >
+                <button id="chatSendBtn">Enviar</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        (() => {
+
+            // ══════════════════════════════════════
+            //  Configurações do jogo
+            // ══════════════════════════════════════
+
+            const CANVAS_W = 800;
+            const CANVAS_H = 500;
+
+            // ── Pong ──
+            const PADDLE_W = 12;
+            const PADDLE_H = 90;
+            const PADDLE_SPEED = 6;
+            const PADDLE_MARGIN = 20;
+
+            const BALL_RADIUS = 8;
+            const BALL_INITIAL_SPEED = 5;
+            const BALL_MAX_SPEED = 12;
+            const BALL_ACCELERATION = 0.3;
+
+            const WINNING_SCORE = 7;
+
+            // ── Tênis de Mesa (top-down) ──
+            const TT = {
+                MARGIN: 50,
+                NET_X: CANVAS_W / 2,
+                PADDLE_R: 18,
+                BALL_R: 7,
+                PADDLE_SPEED: 5.5,
+                GRAVITY: 0.35,
+                ELASTICITY: 0.72,
+                FRICTION: 0.96,
+                MAX_SPEED: 15,
+                HIT_HEIGHT: 60,   // altura máx. para rebater
+                NET_HEIGHT: 60    // acima disso ninguém interage
+            };
+
+            // ══════════════════════════════════════
+            //  Sistema de Áudio (Web Audio API)
+            // ══════════════════════════════════════
+
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            let audioCtx = null;
+
+            function ensureAudio() {
+                if (!audioCtx) {
+                    audioCtx = new AudioCtx();
+                }
+                if (audioCtx.state === "suspended") {
+                    audioCtx.resume();
+                }
+                return audioCtx;
+            }
+
+            // ── Utilitários de áudio clean ──
+
+            function cleanTone(freq, duration, vol = 0.12, attack = 0.01, release = null) {
+                const ctx = ensureAudio();
+                const t = ctx.currentTime;
+                const rel = release !== null ? release : duration * 0.7;
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(freq, t);
+
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(vol, t + attack);
+                gain.gain.setValueAtTime(vol, t + duration - rel);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(t);
+                osc.stop(t + duration + 0.05);
+            }
+
+            function sweepTone(startFreq, endFreq, duration, vol = 0.1) {
+                const ctx = ensureAudio();
+                const t = ctx.currentTime;
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(startFreq, t);
+                osc.frequency.exponentialRampToValueAtTime(endFreq, t + duration);
+
+                filter.type = "lowpass";
+                filter.frequency.setValueAtTime(3000, t);
+                filter.Q.value = 1;
+
+                gain.gain.setValueAtTime(vol, t);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(t);
+                osc.stop(t + duration + 0.05);
+            }
+
+            function softNoise(duration, vol = 0.03, cutoff = 2000) {
+                const ctx = ensureAudio();
+                const t = ctx.currentTime;
+                const len = ctx.sampleRate * duration;
+                const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+                const ch = buf.getChannelData(0);
+                for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+
+                const src = ctx.createBufferSource();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+
+                src.buffer = buf;
+                filter.type = "bandpass";
+                filter.frequency.value = cutoff;
+                filter.Q.value = 0.5;
+
+                gain.gain.setValueAtTime(vol, t);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+                src.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+                src.start(t);
+            }
+
+            // ── Sons do jogo ──
+
+            function sfxPaddleHit() {
+                sweepTone(600, 200, 0.1, 0.13);
+                softNoise(0.06, 0.03, 3000);
+            }
+
+            function sfxWallBounce() {
+                sweepTone(400, 150, 0.08, 0.07);
+            }
+
+            function sfxGoal() {
+                sweepTone(300, 60, 0.6, 0.15);
+                cleanTone(120, 0.5, 0.08, 0.01, 0.4);
+                softNoise(0.3, 0.04, 800);
+            }
+
+            function sfxCountdownTick() {
+                cleanTone(880, 0.2, 0.1, 0.005, 0.15);
+                cleanTone(1760, 0.15, 0.03, 0.005, 0.12);
+            }
+
+            function sfxCountdownGo() {
+                cleanTone(880, 0.3, 0.1, 0.005, 0.25);
+                cleanTone(1108, 0.3, 0.07, 0.005, 0.25);
+                cleanTone(1318, 0.35, 0.08, 0.005, 0.28);
+            }
+
+            function sfxConnect() {
+                cleanTone(659, 0.25, 0.1, 0.01, 0.2);
+                setTimeout(() => cleanTone(880, 0.25, 0.1, 0.01, 0.2), 120);
+                setTimeout(() => cleanTone(1175, 0.4, 0.12, 0.01, 0.3), 240);
+            }
+
+            function sfxDisconnect() {
+                cleanTone(660, 0.25, 0.08, 0.01, 0.2);
+                setTimeout(() => cleanTone(494, 0.25, 0.07, 0.01, 0.2), 150);
+                setTimeout(() => cleanTone(330, 0.5, 0.06, 0.01, 0.4), 300);
+            }
+
+            function sfxWin() {
+                const melody = [
+                    { f: 523, d: 0.2, t: 0 },
+                    { f: 659, d: 0.2, t: 150 },
+                    { f: 784, d: 0.2, t: 300 },
+                    { f: 1047, d: 0.5, t: 450 },
+                    { f: 1318, d: 0.5, t: 450 },
+                    { f: 1568, d: 0.6, t: 500 },
+                ];
+                melody.forEach(n => {
+                    setTimeout(() => cleanTone(n.f, n.d, 0.08, 0.01, n.d * 0.7), n.t);
+                });
+            }
+
+            function sfxChatMsg() {
+                cleanTone(1200, 0.1, 0.05, 0.005, 0.08);
+                setTimeout(() => cleanTone(1500, 0.08, 0.03, 0.005, 0.06), 50);
+            }
+
+            // ── Sons específicos do tênis de mesa ──
+
+            function sfxTableBounce() {
+                sweepTone(900, 400, 0.06, 0.06);
+            }
+
+            function sfxForehand() {
+                sweepTone(700, 300, 0.09, 0.12);
+                softNoise(0.04, 0.025, 2500);
+            }
+
+            function sfxLob() {
+                sweepTone(300, 800, 0.18, 0.09);
+            }
+
+            // ══════════════════════════════════════
+            //  Canvas & contexto
+            // ══════════════════════════════════════
+
+            const canvas = document.getElementById("gameCanvas");
+            const ctx = canvas.getContext("2d");
+
+            // ── Mouse (controle da raquete no Tênis de Mesa) ──
+            let mouseX = CANVAS_W / 2;
+            let mouseY = CANVAS_H / 2;
+            let mouseActive = false;
+
+            canvas.addEventListener("mousemove", e => {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = (e.clientX - rect.left) * (CANVAS_W / rect.width);
+                mouseY = (e.clientY - rect.top) * (CANVAS_H / rect.height);
+                mouseActive = true;
+            });
+
+            canvas.addEventListener("touchmove", e => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                mouseX = (touch.clientX - rect.left) * (CANVAS_W / rect.width);
+                mouseY = (touch.clientY - rect.top) * (CANVAS_H / rect.height);
+                mouseActive = true;
+            }, { passive: false });
+
+            // ══════════════════════════════════════
+            //  PeerJS / conexão P2P
+            // ══════════════════════════════════════
+
+            const peer = new Peer();
+            let connection = null;
+            let isHost = false;
+            let connected = false;
+
+            const statusEl = document.getElementById("status");
+            const roomInput = document.getElementById("roomId");
+            const score1El = document.getElementById("score1");
+            const score2El = document.getElementById("score2");
+            const name1El = document.getElementById("name1Display");
+            const name2El = document.getElementById("name2Display");
+            const nameInput = document.getElementById("nameInput");
+            const infoEl = document.getElementById("info");
+            const minigameLabel = document.getElementById("minigameLabel");
+
+            // ── Sala via URL (link compartilhável) ──
+            const urlParams = new URLSearchParams(location.search);
+            const roomFromUrl = urlParams.get("room");
+            const hostFromUrl = urlParams.get("host") === "1";
+            let autoJoinRoom = null;
+
+            if (roomFromUrl) {
+                roomInput.value = roomFromUrl;
+                if (!hostFromUrl) {
+                    autoJoinRoom = roomFromUrl;
+                    statusEl.textContent = "Link de sala detectado. Conectando...";
+                } else {
+                    statusEl.textContent = "ID da sala carregado do link.";
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Nomes dos jogadores
+            // ══════════════════════════════════════
+
+            let myName = "Jogador";
+            let otherName = "Jogador";
+
+            nameInput.addEventListener("input", () => {
+                myName = nameInput.value.trim() || "Jogador";
+                updateNameDisplays();
+                if (connection && connection.open) {
+                    connection.send({ type: "nameChange", name: myName });
+                }
+            });
+
+            function updateNameDisplays() {
+                if (isHost) {
+                    name1El.textContent = myName;
+                    name2El.textContent = otherName;
+                } else {
+                    name1El.textContent = otherName;
+                    name2El.textContent = myName;
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Chat
+            // ══════════════════════════════════════
+
+            const chatMessages = document.getElementById("chatMessages");
+            const chatInput = document.getElementById("chatInput");
+            const chatSendBtn = document.getElementById("chatSendBtn");
+
+            function addChatMessage(senderName, text, playerClass) {
+                const div = document.createElement("div");
+                div.className = "chat-msg";
+                div.innerHTML = `<span class="sender ${playerClass}">${escapeHtml(senderName)}:</span><span class="text">${escapeHtml(text)}</span>`;
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function addSystemMessage(text) {
+                const div = document.createElement("div");
+                div.className = "chat-msg system";
+                div.textContent = text;
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement("div");
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            function sendChatMessage() {
+                const text = chatInput.value.trim();
+                if (!text || !connection || !connection.open) return;
+
+                const playerClass = isHost ? "p1" : "p2";
+                addChatMessage(myName, text, playerClass);
+
+                connection.send({
+                    type: "chatMessage",
+                    name: myName,
+                    text: text
+                });
+
+                chatInput.value = "";
+            }
+
+            chatSendBtn.addEventListener("click", sendChatMessage);
+
+            chatInput.addEventListener("keydown", e => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                    sendChatMessage();
+                }
+            });
+
+            chatInput.addEventListener("keyup", e => {
+                e.stopPropagation();
+            });
+
+            nameInput.addEventListener("keydown", e => {
+                e.stopPropagation();
+            });
+            nameInput.addEventListener("keyup", e => {
+                e.stopPropagation();
+            });
+
+            // ══════════════════════════════════════
+            //  Estado dos minigames
+            // ══════════════════════════════════════
+
+            let currentMinigame = "pong"; // "pong" | "tableTennis"
+
+            // ══════════════════════════════════════
+            //  Estado do Pong
+            // ══════════════════════════════════════
+
+            const prevState = {
+                countdown: 0,
+                score1: 0,
+                score2: 0,
+                running: false,
+                gameOver: false
+            };
+
+            const state = {
+                paddle1Y: CANVAS_H / 2 - PADDLE_H / 2,
+                paddle2Y: CANVAS_H / 2 - PADDLE_H / 2,
+                paddle1VY: 0,
+                paddle2VY: 0,
+
+                ballX: CANVAS_W / 2,
+                ballY: CANVAS_H / 2,
+                ballVX: BALL_INITIAL_SPEED,
+                ballVY: BALL_INITIAL_SPEED * 0.6,
+
+                score1: 0,
+                score2: 0,
+
+                running: false,
+                gameOver: false,
+                winner: "",
+
+                countdown: 0
+            };
+
+            // ══════════════════════════════════════
+            //  Estado do Tênis de Mesa
+            // ══════════════════════════════════════
+
+            const tt = {
+                ballX: CANVAS_W / 2,
+                ballY: CANVAS_H / 2,
+                ballZ: 40,
+                ballVX: 0,
+                ballVY: 0,
+                ballVZ: 0,
+
+                p1X: 100,
+                p1Y: CANVAS_H / 2,
+                p1VX: 0,
+                p1VY: 0,
+                p1PrevX: 100,
+                p1PrevY: CANVAS_H / 2,
+                p2X: CANVAS_W - 100,
+                p2Y: CANVAS_H / 2,
+                p2VX: 0,
+                p2VY: 0,
+                p2PrevX: CANVAS_W - 100,
+                p2PrevY: CANVAS_H / 2,
+
+                lastHitter: null,   // "p1" | "p2"
+                crossedNet: false,
+                bouncesOnOpponent: 0,
+
+                score1: 0,
+                score2: 0,
+                gameOver: false,
+                winner: "",
+
+                rallyActive: false,
+                restTimer: 0,
+                hitCooldown: 0
+            };
+
+            // ══════════════════════════════════════
+            //  Input do teclado
+            // ══════════════════════════════════════
+
+            const keys = {};
+
+            window.addEventListener("keydown", e => {
+                const k = e.key.toLowerCase();
+                keys[k] = true;
+
+                if (["arrowup", "arrowdown", "arrowleft", "arrowright", " ", "enter"].includes(k)) {
+                    e.preventDefault();
+                }
+            });
+
+            window.addEventListener("keyup", e => {
+                const k = e.key.toLowerCase();
+                keys[k] = false;
+            });
+
+            // ══════════════════════════════════════
+            //  Botões de menu
+            // ══════════════════════════════════════
+
+            document.getElementById("hostButton")
+                .addEventListener("click", () => {
+                    if (!peer.id) {
+                        statusEl.textContent = "Aguardando PeerJS...";
+                        return;
+                    }
+
+                    isHost = true;
+                    roomInput.value = peer.id;
+
+                    const base = location.protocol === "file:"
+                        ? location.href.split("?")[0].split("#")[0]
+                        : location.origin + location.pathname;
+                    const sharedLink = base + "?room=" + encodeURIComponent(peer.id);
+
+                    statusEl.textContent = "Sala criada! Link copiado: " + sharedLink;
+                    updateNameDisplays();
+
+                    // Atualiza o endpoint do host com o ID da sala
+                    try {
+                        history.replaceState(null, "", "?room=" + encodeURIComponent(peer.id) + "&host=1");
+                    } catch (e) {}
+
+                    // Copia o link completo para compartilhar
+                    navigator.clipboard.writeText(sharedLink).catch(() => {
+                        navigator.clipboard.writeText(peer.id).catch(() => {});
+                    });
+                });
+
+            document.getElementById("joinButton")
+                .addEventListener("click", () => {
+                    const roomId = roomInput.value.trim();
+                    if (!roomId) return;
+
+                    isHost = false;
+                    connection = peer.connect(roomId, { reliable: true });
+                    configureConnection();
+                    statusEl.textContent = "Conectando...";
+                    updateNameDisplays();
+                });
+
+            document.getElementById("switchButton")
+                .addEventListener("click", () => {
+                    const next = currentMinigame === "pong" ? "tableTennis" : "pong";
+                    switchMinigame(next, true);
+                });
+
+            peer.on("connection", conn => {
+                connection = conn;
+                configureConnection();
+            });
+
+            peer.on("open", () => {
+                statusEl.textContent = "Pronto. Crie uma sala ou entre em uma.";
+
+                // Entra automaticamente se a página foi aberta por um link de sala
+                if (autoJoinRoom) {
+                    const room = autoJoinRoom;
+                    autoJoinRoom = null;
+                    statusEl.textContent = "Conectando à sala " + room + "...";
+                    document.getElementById("joinButton").click();
+                }
+            });
+
+            peer.on("error", err => {
+                statusEl.textContent = "Erro: " + err.type;
+            });
+
+            // ══════════════════════════════════════
+            //  Troca de minigame
+            // ══════════════════════════════════════
+
+            function switchMinigame(game, notifyPeer) {
+                if (currentMinigame === game) return;
+
+                currentMinigame = game;
+
+                minigameLabel.textContent = "Minigame: " +
+                    (game === "pong" ? "Pong" : "Tênis de Mesa");
+
+                updateInfoText();
+                updateScoreDisplay();
+
+                // Reset do round do minigame selecionado (mantém os placares)
+                if (game === "pong") {
+                    if (state.score1 >= WINNING_SCORE || state.score2 >= WINNING_SCORE) {
+                        state.score1 = 0;
+                        state.score2 = 0;
+                    }
+                    state.running = false;
+                    state.gameOver = false;
+                    state.winner = "";
+                    state.countdown = 0;
+                    resetBall();
+                } else {
+                    if (tt.score1 >= WINNING_SCORE || tt.score2 >= WINNING_SCORE) {
+                        tt.score1 = 0;
+                        tt.score2 = 0;
+                    }
+                    tt.gameOver = false;
+                    tt.winner = "";
+                    tt.hitCooldown = 0;
+                    resetTTBall();
+                }
+
+                if (notifyPeer && connection && connection.open) {
+                    connection.send({ type: "switchMinigame", game: game });
+                }
+
+                addSystemMessage("Minigame alterado para: " +
+                    (game === "pong" ? "Pong" : "Tênis de Mesa"));
+
+                if (connected && isHost) {
+                    if (game === "pong") {
+                        startCountdown();
+                    } else {
+                        broadcastTTState();
+                    }
+                }
+            }
+
+            function updateInfoText() {
+                if (currentMinigame === "pong") {
+                    infoEl.textContent = "W / S ou ↑ / ↓ para mover a raquete";
+                } else {
+                    infoEl.textContent =
+                        "Mova o mouse para controlar a raquete — a bola é rebatida ao tocar nela";
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Configuração da conexão P2P
+            // ══════════════════════════════════════
+
+            function configureConnection() {
+
+                connection.on("open", () => {
+                    connected = true;
+                    statusEl.textContent = "Conectado! Preparando...";
+                    sfxConnect();
+                    addSystemMessage("Jogador conectado!");
+
+                    connection.send({ type: "nameChange", name: myName });
+
+                    if (isHost) {
+                        // Sincroniza o minigame atual com o guest
+                        connection.send({ type: "switchMinigame", game: currentMinigame });
+
+                        if (currentMinigame === "pong") {
+                            startCountdown();
+                        } else {
+                            resetTTBall();
+                            broadcastTTState();
+                        }
+                    }
+                });
+
+                connection.on("data", data => {
+
+                    switch (data.type) {
+
+                        case "paddleMove":
+                            if (isHost && currentMinigame === "pong") {
+                                state.paddle2VY = data.y - state.paddle2Y;
+                                state.paddle2Y = data.y;
+                            }
+                            break;
+
+                        case "hostPaddle":
+                            if (!isHost && currentMinigame === "pong") {
+                                state.paddle1Y = data.y;
+                            }
+                            break;
+
+                        case "sfx":
+                            if (!isHost && currentMinigame === "pong") {
+                                switch (data.sfx) {
+                                    case "paddleHit": sfxPaddleHit(); break;
+                                    case "wallBounce": sfxWallBounce(); break;
+                                }
+                            }
+                            break;
+
+                        case "nameChange":
+                            otherName = data.name || "Jogador";
+                            updateNameDisplays();
+                            break;
+
+                        case "chatMessage": {
+                            const senderClass = isHost ? "p2" : "p1";
+                            addChatMessage(data.name, data.text, senderClass);
+                            sfxChatMsg();
+                            break;
+                        }
+
+                        case "switchMinigame":
+                            switchMinigame(data.game, false);
+                            break;
+
+                        // ── Pong: estado completo ──
+                        case "gameState":
+                            if (!isHost && currentMinigame === "pong") {
+                                const newCountdown = data.countdown || 0;
+                                const newScore1 = data.score1;
+                                const newScore2 = data.score2;
+
+                                if (newCountdown > 0 && newCountdown !== prevState.countdown) {
+                                    sfxCountdownTick();
+                                }
+                                if (prevState.countdown > 0 && newCountdown === 0 && data.running) {
+                                    sfxCountdownGo();
+                                }
+                                if (newScore1 > prevState.score1 || newScore2 > prevState.score2) {
+                                    sfxGoal();
+                                }
+                                if (data.gameOver && !prevState.gameOver) {
+                                    sfxWin();
+                                }
+
+                                prevState.countdown = newCountdown;
+                                prevState.score1 = newScore1;
+                                prevState.score2 = newScore2;
+                                prevState.running = data.running;
+                                prevState.gameOver = data.gameOver;
+
+                                state.ballX = data.ballX;
+                                state.ballY = data.ballY;
+                                state.ballVX = data.ballVX;
+                                state.ballVY = data.ballVY;
+                                state.score1 = data.score1;
+                                state.score2 = data.score2;
+                                state.running = data.running;
+                                state.gameOver = data.gameOver;
+                                state.winner = data.winner || "";
+                                state.countdown = data.countdown || 0;
+                                updateScoreDisplay();
+                            }
+                            break;
+
+                        // ── Tênis de Mesa: posição/velocidade da raquete do guest ──
+                        case "ttPaddle":
+                            if (isHost && currentMinigame === "tableTennis") {
+                                tt.p2PrevX = tt.p2X;
+                                tt.p2PrevY = tt.p2Y;
+                                tt.p2X = data.p2X;
+                                tt.p2Y = data.p2Y;
+                                tt.p2VX = data.p2VX || 0;
+                                tt.p2VY = data.p2VY || 0;
+                            }
+                            break;
+
+                        // ── Tênis de Mesa: estado completo (host → guest) ──
+                        case "ttState":
+                            if (!isHost && currentMinigame === "tableTennis") {
+                                tt.ballX = data.ballX;
+                                tt.ballY = data.ballY;
+                                tt.ballZ = data.ballZ;
+                                tt.ballVX = data.ballVX;
+                                tt.ballVY = data.ballVY;
+                                tt.ballVZ = data.ballVZ;
+                                tt.p1X = data.p1X;
+                                tt.p1Y = data.p1Y;
+                                tt.p1VX = data.p1VX || 0;
+                                tt.p1VY = data.p1VY || 0;
+                                tt.score1 = data.score1;
+                                tt.score2 = data.score2;
+                                tt.gameOver = data.gameOver;
+                                tt.winner = data.winner || "";
+                                tt.rallyActive = data.rallyActive;
+                                tt.lastHitter = data.lastHitter;
+                                tt.crossedNet = data.crossedNet;
+                                tt.bouncesOnOpponent = data.bouncesOnOpponent;
+                                updateScoreDisplay();
+                            }
+                            break;
+
+                        case "ttReset":
+                            if (!isHost && currentMinigame === "tableTennis") {
+                                tt.score1 = data.score1;
+                                tt.score2 = data.score2;
+                                tt.gameOver = data.gameOver;
+                                tt.winner = data.winner || "";
+                                updateScoreDisplay();
+                            }
+                            break;
+                    }
+
+                });
+
+                connection.on("close", () => {
+                    connected = false;
+                    state.running = false;
+                    tt.rallyActive = false;
+                    statusEl.textContent = "Jogador desconectou.";
+                    sfxDisconnect();
+                    addSystemMessage(otherName + " desconectou.");
+                });
+
+            }
+
+            // ══════════════════════════════════════
+            //  PONG — Contagem regressiva
+            // ══════════════════════════════════════
+
+            let countdownInterval = null;
+
+            function startCountdown() {
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+
+                resetBall();
+                state.running = false;
+                state.gameOver = false;
+                state.winner = "";
+                state.countdown = 3;
+                sfxCountdownTick();
+
+                countdownInterval = setInterval(() => {
+                    if (currentMinigame !== "pong") {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                        return;
+                    }
+                    state.countdown--;
+                    if (state.countdown <= 0) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                        state.running = true;
+                        sfxCountdownGo();
+                    } else {
+                        sfxCountdownTick();
+                    }
+                    broadcastState();
+                }, 1000);
+
+                broadcastState();
+            }
+
+            function resetBall() {
+                state.ballX = CANVAS_W / 2;
+                state.ballY = CANVAS_H / 2;
+
+                const direction = Math.random() > 0.5 ? 1 : -1;
+                const angle = (Math.random() * 0.6 - 0.3);
+                state.ballVX = BALL_INITIAL_SPEED * direction;
+                state.ballVY = BALL_INITIAL_SPEED * Math.sin(angle);
+            }
+
+            // ══════════════════════════════════════
+            //  PONG — Broadcast
+            // ══════════════════════════════════════
+
+            function sendSfxEvent(sfxName) {
+                if (connection && connection.open && isHost) {
+                    connection.send({ type: "sfx", sfx: sfxName });
+                }
+            }
+
+            function broadcastState() {
+                if (connection && connection.open && isHost) {
+                    connection.send({
+                        type: "gameState",
+                        ballX: state.ballX,
+                        ballY: state.ballY,
+                        ballVX: state.ballVX,
+                        ballVY: state.ballVY,
+                        score1: state.score1,
+                        score2: state.score2,
+                        running: state.running,
+                        gameOver: state.gameOver,
+                        winner: state.winner,
+                        countdown: state.countdown
+                    });
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Placar na tela
+            // ══════════════════════════════════════
+
+            function updateScoreDisplay() {
+                if (currentMinigame === "pong") {
+                    score1El.textContent = state.score1;
+                    score2El.textContent = state.score2;
+                } else {
+                    score1El.textContent = tt.score1;
+                    score2El.textContent = tt.score2;
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Loop principal
+            // ══════════════════════════════════════
+
+            let lastBroadcast = 0;
+            const BROADCAST_INTERVAL = 1000 / 60;
+
+            function gameLoop(timestamp) {
+
+                if (currentMinigame === "pong") {
+                    handleMyPaddle();
+
+                    if (isHost && state.running && !state.gameOver) {
+                        updateBall();
+                    }
+
+                    if (timestamp - lastBroadcast >= BROADCAST_INTERVAL) {
+                        lastBroadcast = timestamp;
+                        if (connected && isHost) {
+                            connection.send({
+                                type: "hostPaddle",
+                                y: state.paddle1Y
+                            });
+                            broadcastState();
+                        }
+                    }
+                } else {
+                    handleTTPaddle();
+
+                    if (isHost && connected && !tt.gameOver) {
+                        updateTTBall();
+                    }
+
+                    if (timestamp - lastBroadcast >= BROADCAST_INTERVAL) {
+                        lastBroadcast = timestamp;
+                        if (connected && isHost) {
+                            broadcastTTState();
+                        }
+                    }
+                }
+
+                render();
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            // ══════════════════════════════════════
+            //  PONG — Mover a própria raquete
+            // ══════════════════════════════════════
+
+            function handleMyPaddle() {
+                if (!connected) return;
+
+                let moved = false;
+                const before = isHost ? state.paddle1Y : state.paddle2Y;
+
+                if (isHost) {
+                    if (keys["w"] || keys["arrowup"]) {
+                        state.paddle1Y -= PADDLE_SPEED;
+                        moved = true;
+                    }
+                    if (keys["s"] || keys["arrowdown"]) {
+                        state.paddle1Y += PADDLE_SPEED;
+                        moved = true;
+                    }
+                    state.paddle1Y = clamp(state.paddle1Y, 0, CANVAS_H - PADDLE_H);
+                    state.paddle1VY = state.paddle1Y - before;
+                } else {
+                    if (keys["w"] || keys["arrowup"]) {
+                        state.paddle2Y -= PADDLE_SPEED;
+                        moved = true;
+                    }
+                    if (keys["s"] || keys["arrowdown"]) {
+                        state.paddle2Y += PADDLE_SPEED;
+                        moved = true;
+                    }
+                    state.paddle2Y = clamp(state.paddle2Y, 0, CANVAS_H - PADDLE_H);
+                    state.paddle2VY = state.paddle2Y - before;
+
+                    if (moved && connection && connection.open) {
+                        connection.send({
+                            type: "paddleMove",
+                            y: state.paddle2Y
+                        });
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  PONG — Física da bola (host only)
+            // ══════════════════════════════════════
+
+            function updateBall() {
+
+                const prevX = state.ballX;
+                const prevY = state.ballY;
+
+                state.ballX += state.ballVX;
+                state.ballY += state.ballVY;
+
+                // ── Colisão topo/baixo ──
+                if (state.ballY - BALL_RADIUS <= 0) {
+                    state.ballY = BALL_RADIUS;
+                    state.ballVY = Math.abs(state.ballVY);
+                    sfxWallBounce();
+                    sendSfxEvent("wallBounce");
+                }
+                if (state.ballY + BALL_RADIUS >= CANVAS_H) {
+                    state.ballY = CANVAS_H - BALL_RADIUS;
+                    state.ballVY = -Math.abs(state.ballVY);
+                    sfxWallBounce();
+                    sendSfxEvent("wallBounce");
+                }
+
+                // ── Colisão raquete esquerda (paddle1) ──
+                const p1Left = PADDLE_MARGIN;
+                const p1Right = PADDLE_MARGIN + PADDLE_W;
+                const p1Top = state.paddle1Y;
+                const p1Bottom = state.paddle1Y + PADDLE_H;
+
+                // CCD: verifica se a bola cruzou a faixa da raquete entre prev e atual
+                const crossedP1 =
+                    prevX - BALL_RADIUS > p1Right &&
+                    state.ballX - BALL_RADIUS <= p1Right &&
+                    state.ballVX < 0;
+
+                if (
+                    (crossedP1 || (
+                        state.ballVX < 0 &&
+                        state.ballX - BALL_RADIUS <= p1Right &&
+                        state.ballX + BALL_RADIUS >= p1Left &&
+                        state.ballY >= p1Top &&
+                        state.ballY <= p1Bottom
+                    ))
+                ) {
+                    if (state.ballY >= p1Top - BALL_RADIUS && state.ballY <= p1Bottom + BALL_RADIUS) {
+                        state.ballX = p1Right + BALL_RADIUS;
+
+                        const hitPos = clamp((state.ballY - p1Top) / PADDLE_H, 0, 1);
+                        const angle = (hitPos - 0.5) * (Math.PI / 3);
+
+                        const speed = Math.min(
+                            Math.sqrt(state.ballVX ** 2 + state.ballVY ** 2) + BALL_ACCELERATION,
+                            BALL_MAX_SPEED
+                        );
+                        state.ballVX = speed * Math.cos(angle);
+                        state.ballVY = speed * Math.sin(angle);
+
+                        // Efeito inglês: influência do movimento da raquete
+                        state.ballVY += state.paddle1VY * 0.25;
+
+                        sfxPaddleHit();
+                        sendSfxEvent("paddleHit");
+                    }
+                }
+
+                // ── Colisão raquete direita (paddle2) ──
+                const p2Left = CANVAS_W - PADDLE_MARGIN - PADDLE_W;
+                const p2Right = CANVAS_W - PADDLE_MARGIN;
+                const p2Top = state.paddle2Y;
+                const p2Bottom = state.paddle2Y + PADDLE_H;
+
+                const crossedP2 =
+                    prevX + BALL_RADIUS < p2Left &&
+                    state.ballX + BALL_RADIUS >= p2Left &&
+                    state.ballVX > 0;
+
+                if (
+                    (crossedP2 || (
+                        state.ballVX > 0 &&
+                        state.ballX + BALL_RADIUS >= p2Left &&
+                        state.ballX - BALL_RADIUS <= p2Right &&
+                        state.ballY >= p2Top &&
+                        state.ballY <= p2Bottom
+                    ))
+                ) {
+                    if (state.ballY >= p2Top - BALL_RADIUS && state.ballY <= p2Bottom + BALL_RADIUS) {
+                        state.ballX = p2Left - BALL_RADIUS;
+
+                        const hitPos = clamp((state.ballY - p2Top) / PADDLE_H, 0, 1);
+                        const angle = (hitPos - 0.5) * (Math.PI / 3);
+
+                        const speed = Math.min(
+                            Math.sqrt(state.ballVX ** 2 + state.ballVY ** 2) + BALL_ACCELERATION,
+                            BALL_MAX_SPEED
+                        );
+                        state.ballVX = -(speed * Math.cos(angle));
+                        state.ballVY = speed * Math.sin(angle);
+
+                        state.ballVY += state.paddle2VY * 0.25;
+
+                        sfxPaddleHit();
+                        sendSfxEvent("paddleHit");
+                    }
+                }
+
+                // ── Gol esquerdo (ponto para jogador 2) ──
+                if (state.ballX - BALL_RADIUS <= 0) {
+                    state.score2++;
+                    updateScoreDisplay();
+                    sfxGoal();
+                    checkWin();
+                    if (!state.gameOver) {
+                        startCountdown();
+                    }
+                }
+
+                // ── Gol direito (ponto para jogador 1) ──
+                if (state.ballX + BALL_RADIUS >= CANVAS_W) {
+                    state.score1++;
+                    updateScoreDisplay();
+                    sfxGoal();
+                    checkWin();
+                    if (!state.gameOver) {
+                        startCountdown();
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  PONG — Checar vitória
+            // ══════════════════════════════════════
+
+            function checkWin() {
+                if (state.score1 >= WINNING_SCORE) {
+                    state.gameOver = true;
+                    state.running = false;
+                    state.winner = isHost ? myName : otherName;
+                    sfxWin();
+                    broadcastState();
+                } else if (state.score2 >= WINNING_SCORE) {
+                    state.gameOver = true;
+                    state.running = false;
+                    state.winner = isHost ? otherName : myName;
+                    sfxWin();
+                    broadcastState();
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Reiniciar partida de Pong (host aperta Enter)
+            // ══════════════════════════════════════
+
+            window.addEventListener("keydown", e => {
+                if (
+                    e.key === "Enter" &&
+                    currentMinigame === "pong" &&
+                    isHost &&
+                    state.gameOver &&
+                    connected
+                ) {
+                    state.score1 = 0;
+                    state.score2 = 0;
+                    state.gameOver = false;
+                    state.winner = "";
+                    updateScoreDisplay();
+                    startCountdown();
+                }
+            });
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Reset da bola
+            // ══════════════════════════════════════
+
+            function resetTTBall() {
+                tt.ballX = CANVAS_W / 2;
+                tt.ballY = CANVAS_H / 2;
+                tt.ballZ = 45;
+                tt.ballVX = (Math.random() > 0.5 ? 1 : -1) * 1.5;
+                tt.ballVY = (Math.random() - 0.5) * 1.5;
+                tt.ballVZ = 0;
+
+                tt.lastHitter = null;
+                tt.crossedNet = false;
+                tt.bouncesOnOpponent = 0;
+
+                tt.rallyActive = true;
+                tt.restTimer = 0;
+                tt.hitCooldown = 0;
+
+                tt.p1VX = 0;
+                tt.p1VY = 0;
+                tt.p2VX = 0;
+                tt.p2VY = 0;
+
+                tt.p1PrevX = tt.p1X;
+                tt.p1PrevY = tt.p1Y;
+                tt.p2PrevX = tt.p2X;
+                tt.p2PrevY = tt.p2Y;
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Mover a raquete
+            // ══════════════════════════════════════
+
+            function handleTTPaddle() {
+                if (!connected || currentMinigame !== "tableTennis") return;
+                if (!mouseActive) return;
+
+                if (isHost) {
+                    tt.p1PrevX = tt.p1X;
+                    tt.p1PrevY = tt.p1Y;
+
+                    tt.p1X = clamp(mouseX, TT.MARGIN + TT.PADDLE_R, TT.NET_X - TT.PADDLE_R - 4);
+                    tt.p1Y = clamp(mouseY, TT.MARGIN + TT.PADDLE_R, CANVAS_H - TT.MARGIN - TT.PADDLE_R);
+
+                    tt.p1VX = tt.p1X - tt.p1PrevX;
+                    tt.p1VY = tt.p1Y - tt.p1PrevY;
+                } else {
+                    tt.p2PrevX = tt.p2X;
+                    tt.p2PrevY = tt.p2Y;
+
+                    tt.p2X = clamp(mouseX, TT.NET_X + TT.PADDLE_R + 4, CANVAS_W - TT.MARGIN - TT.PADDLE_R);
+                    tt.p2Y = clamp(mouseY, TT.MARGIN + TT.PADDLE_R, CANVAS_H - TT.MARGIN - TT.PADDLE_R);
+
+                    tt.p2VX = tt.p2X - tt.p2PrevX;
+                    tt.p2VY = tt.p2Y - tt.p2PrevY;
+
+                    if (connection && connection.open) {
+                        connection.send({
+                            type: "ttPaddle",
+                            p2X: tt.p2X,
+                            p2Y: tt.p2Y,
+                            p2VX: tt.p2VX,
+                            p2VY: tt.p2VY
+                        });
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Colisão da bola com a raquete
+            //  (executado no host, autoridade da física)
+            // ══════════════════════════════════════
+
+            function checkTTBallHit(player) {
+                if (tt.gameOver || !tt.rallyActive) return;
+                if (tt.hitCooldown > 0) return;
+
+                const px = player === "p1" ? tt.p1X : tt.p2X;
+                const py = player === "p1" ? tt.p1Y : tt.p2Y;
+                const pvx = player === "p1" ? tt.p1VX : tt.p2VX;
+                const pvy = player === "p1" ? tt.p1VY : tt.p2VY;
+
+                const dx = tt.ballX - px;
+                const dy = tt.ballY - py;
+
+                const prevPX = player === "p1" ? tt.p1PrevX : tt.p2PrevX;
+                const prevPY = player === "p1" ? tt.p1PrevY : tt.p2PrevY;
+                const sweptDist = distToSegment(tt.ballX, tt.ballY, prevPX, prevPY, px, py);
+
+                // A bola não pode estar alta demais (acima da linha pontilhada)
+                if (tt.ballZ > TT.NET_HEIGHT) return;
+
+                // Só rebate se a bola tocar a raquete (inclui o trajeto do mouse)
+                if (sweptDist > TT.PADDLE_R + TT.BALL_R + 2) return;
+
+                // A bola precisa estar no lado do jogador
+                const onMySide =
+                    (player === "p1" && tt.ballX <= TT.NET_X) ||
+                    (player === "p2" && tt.ballX >= TT.NET_X);
+                if (!onMySide) return;
+
+                // Evita rebater a própria bola antes de ela cruzar a rede
+                if (tt.lastHitter === player && !tt.crossedNet) return;
+
+                const direction = player === "p1" ? 1 : -1;
+
+                // Ângulo baseado no ponto de impacto na raquete
+                const hitPos = clamp(dy / TT.PADDLE_R, -1, 1);
+                const angle = hitPos * (Math.PI / 4);
+
+                // Força base + velocidade do mouse na direção do golpe
+                const forwardSpeed = player === "p1" ? pvx : -pvx;
+                const power = clamp(6 + Math.max(0, forwardSpeed) * 0.7, 5, TT.MAX_SPEED);
+
+                tt.ballVX = direction * power * Math.cos(angle);
+                tt.ballVY = power * Math.sin(angle) + pvy * 0.25;
+
+                // Movimento do mouse para cima = lob (bola sobe)
+                const lift = Math.max(0, -pvy) * 0.8;
+                tt.ballVZ = 2.5 + lift;
+
+                tt.ballZ = Math.max(tt.ballZ, 1);
+                tt.lastHitter = player;
+                tt.crossedNet = false;
+                tt.bouncesOnOpponent = 0;
+                tt.hitCooldown = 10;
+
+                // Reposiciona a bola para fora da raquete, se estiver sobreposta
+                const curDist = Math.sqrt(dx * dx + dy * dy);
+                if (curDist < TT.PADDLE_R + TT.BALL_R + 1) {
+                    const nx = dx / (curDist || 1);
+                    const ny = dy / (curDist || 1);
+                    tt.ballX = px + nx * (TT.PADDLE_R + TT.BALL_R + 3);
+                    tt.ballY = py + ny * (TT.PADDLE_R + TT.BALL_R + 3);
+                }
+
+                if (lift > 3) sfxLob();
+                else sfxForehand();
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Física da bola (host)
+            // ══════════════════════════════════════
+
+            function updateTTBall() {
+                if (tt.gameOver || !tt.rallyActive) return;
+
+                if (tt.hitCooldown > 0) tt.hitCooldown--;
+
+                const left = TT.MARGIN;
+                const right = CANVAS_W - TT.MARGIN;
+                const top = TT.MARGIN;
+                const bottom = CANVAS_H - TT.MARGIN;
+
+                // Gravidade na altura
+                tt.ballVZ -= TT.GRAVITY;
+
+                tt.ballX += tt.ballVX;
+                tt.ballY += tt.ballVY;
+                tt.ballZ += tt.ballVZ;
+
+                // Cruzou a rede?
+                if (!tt.crossedNet && tt.lastHitter) {
+                    if (
+                        (tt.lastHitter === "p1" && tt.ballX > TT.NET_X) ||
+                        (tt.lastHitter === "p2" && tt.ballX < TT.NET_X)
+                    ) {
+                        // A bola precisa passar por cima da rede
+                        if (tt.ballZ < 4) {
+                            scoreTT(tt.lastHitter === "p1" ? "p2" : "p1");
+                            return;
+                        }
+                        tt.crossedNet = true;
+                    }
+                }
+
+                // Quique na superfície
+                if (tt.ballZ <= 0) {
+                    tt.ballZ = 0;
+
+                    if (tt.ballVZ < -1.2) {
+                        tt.ballVZ = -tt.ballVZ * TT.ELASTICITY;
+                        tt.ballVX *= TT.FRICTION;
+                        tt.ballVY *= TT.FRICTION;
+                        sfxTableBounce();
+
+                        const side = tt.ballX < TT.NET_X ? "p1" : "p2";
+
+                        if (tt.lastHitter && tt.crossedNet) {
+                            if (side === tt.lastHitter) {
+                                // voltou para o lado de quem bateu → falta
+                                scoreTT(side === "p1" ? "p2" : "p1");
+                                return;
+                            } else {
+                                tt.bouncesOnOpponent++;
+                                if (tt.bouncesOnOpponent >= 2) {
+                                    scoreTT(tt.lastHitter);
+                                    return;
+                                }
+                            }
+                        }
+                    } else {
+                        // bola praticamente parada na mesa
+                        tt.ballVZ = 0;
+                        tt.ballVX *= 0.95;
+                        tt.ballVY *= 0.95;
+                        tt.restTimer++;
+
+                        if (tt.restTimer > 180) {
+                            // parada por ~3s: ponto para o lado oposto
+                            const side = tt.ballX < TT.NET_X ? "p1" : "p2";
+                            scoreTT(side === "p1" ? "p2" : "p1");
+                            return;
+                        }
+                    }
+                } else {
+                    tt.restTimer = 0;
+                }
+
+                // Rebote nas laterais da mesa (topo/baixo) — a bola não sai para os lados
+                if (tt.ballY - TT.BALL_R <= top) {
+                    tt.ballY = top + TT.BALL_R;
+                    tt.ballVY = Math.abs(tt.ballVY);
+                    sfxTableBounce();
+                }
+                if (tt.ballY + TT.BALL_R >= bottom) {
+                    tt.ballY = bottom - TT.BALL_R;
+                    tt.ballVY = -Math.abs(tt.ballVY);
+                    sfxTableBounce();
+                }
+
+                // Fora dos limites da mesa (apenas nas laterais dos jogadores: esquerda/direita)
+                if (tt.ballX < left || tt.ballX > right) {
+                    if (tt.lastHitter) {
+                        if (tt.crossedNet && tt.bouncesOnOpponent > 0) {
+                            scoreTT(tt.lastHitter);
+                        } else {
+                            scoreTT(tt.lastHitter === "p1" ? "p2" : "p1");
+                        }
+                    } else {
+                        resetTTBall();
+                    }
+                    return;
+                }
+
+                // Colisão com as raquetes (só se a bola estiver baixa o suficiente)
+                if (tt.ballZ <= TT.NET_HEIGHT) {
+                    if (tt.hitCooldown <= 0) {
+                        checkTTBallHit("p1");
+                        checkTTBallHit("p2");
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Placar
+            // ══════════════════════════════════════
+
+            function scoreTT(winner) {
+                if (currentMinigame !== "tableTennis" || tt.gameOver) return;
+
+                if (winner === "p1") tt.score1++;
+                else tt.score2++;
+
+                updateScoreDisplay();
+                sfxGoal();
+
+                if (tt.score1 >= WINNING_SCORE || tt.score2 >= WINNING_SCORE) {
+                    tt.gameOver = true;
+                    tt.rallyActive = false;
+                    tt.winner = tt.score1 >= WINNING_SCORE
+                        ? (isHost ? myName : otherName)
+                        : (isHost ? otherName : myName);
+                    sfxWin();
+                } else {
+                    resetTTBall();
+                }
+
+                broadcastTTState();
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS DE MESA — Broadcast (host → guest)
+            // ══════════════════════════════════════
+
+            function broadcastTTState() {
+                if (connection && connection.open && isHost) {
+                    connection.send({
+                        type: "ttState",
+                        ballX: tt.ballX,
+                        ballY: tt.ballY,
+                        ballZ: tt.ballZ,
+                        ballVX: tt.ballVX,
+                        ballVY: tt.ballVY,
+                        ballVZ: tt.ballVZ,
+                        p1X: tt.p1X,
+                        p1Y: tt.p1Y,
+                        p1VX: tt.p1VX,
+                        p1VY: tt.p1VY,
+                        score1: tt.score1,
+                        score2: tt.score2,
+                        gameOver: tt.gameOver,
+                        winner: tt.winner,
+                        rallyActive: tt.rallyActive,
+                        lastHitter: tt.lastHitter,
+                        crossedNet: tt.crossedNet,
+                        bouncesOnOpponent: tt.bouncesOnOpponent
+                    });
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Renderização (dispatch)
+            // ══════════════════════════════════════
+
+            function render() {
+                if (currentMinigame === "pong") {
+                    renderPong();
+                } else {
+                    renderTableTennis();
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Render — Pong
+            // ══════════════════════════════════════
+
+            function renderPong() {
+                ctx.fillStyle = "#0d1117";
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                // Linha central tracejada
+                ctx.setLineDash([10, 10]);
+                ctx.strokeStyle = "rgba(255,255,255,0.12)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(CANVAS_W / 2, 0);
+                ctx.lineTo(CANVAS_W / 2, CANVAS_H);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Placar grande no fundo
+                ctx.fillStyle = "rgba(255,255,255,0.04)";
+                ctx.font = "bold 140px 'Segoe UI', Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(state.score1, CANVAS_W / 4, CANVAS_H / 2);
+                ctx.fillText(state.score2, (CANVAS_W / 4) * 3, CANVAS_H / 2);
+
+                // Nomes no topo
+                ctx.font = "bold 14px 'Segoe UI', Arial";
+                ctx.fillStyle = "rgba(0, 229, 255, 0.5)";
+                ctx.textAlign = "center";
+                ctx.fillText(name1El.textContent, CANVAS_W / 4, 20);
+                ctx.fillStyle = "rgba(255, 23, 68, 0.5)";
+                ctx.fillText(name2El.textContent, (CANVAS_W / 4) * 3, 20);
+
+                // Raquetes
+                drawPaddle(PADDLE_MARGIN, state.paddle1Y, "#00e5ff");
+                drawPaddle(CANVAS_W - PADDLE_MARGIN - PADDLE_W, state.paddle2Y, "#ff1744");
+
+                // Bola
+                if (state.running) {
+                    const gradient = ctx.createRadialGradient(
+                        state.ballX, state.ballY, 0,
+                        state.ballX, state.ballY, BALL_RADIUS * 3
+                    );
+                    gradient.addColorStop(0, "rgba(255, 255, 255, 0.3)");
+                    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS * 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = "#ffffff";
+                    ctx.shadowColor = "#ffffff";
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Contagem regressiva
+                if (state.countdown > 0 && !state.gameOver) {
+                    ctx.fillStyle = "rgba(0, 229, 255, 0.9)";
+                    ctx.font = "bold 80px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#00e5ff";
+                    ctx.shadowBlur = 30;
+                    ctx.fillText(state.countdown, CANVAS_W / 2, CANVAS_H / 2);
+                    ctx.shadowBlur = 0;
+                }
+
+                if (!connected) {
+                    ctx.fillStyle = "rgba(255,255,255,0.5)";
+                    ctx.font = "24px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("Aguardando conexão...", CANVAS_W / 2, CANVAS_H / 2);
+                }
+
+                if (state.gameOver) {
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    ctx.fillStyle = "#ffea00";
+                    ctx.font = "bold 48px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#ffea00";
+                    ctx.shadowBlur = 20;
+                    ctx.fillText("🏆 " + state.winner + " venceu!", CANVAS_W / 2, CANVAS_H / 2 - 20);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "rgba(255,255,255,0.6)";
+                    ctx.font = "18px 'Segoe UI', Arial";
+                    ctx.fillText(
+                        isHost ? "Pressione ENTER para jogar novamente" : "Aguardando host reiniciar...",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 30
+                    );
+                }
+            }
+
+            // ══════════════════════════════════════
+            //  Render — Tênis de Mesa
+            // ══════════════════════════════════════
+
+            function renderTableTennis() {
+                // Fundo
+                ctx.fillStyle = "#0a0f0a";
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                // Mesa
+                const left = TT.MARGIN;
+                const top = TT.MARGIN;
+                const w = CANVAS_W - TT.MARGIN * 2;
+                const h = CANVAS_H - TT.MARGIN * 2;
+
+                ctx.fillStyle = "#123524";
+                ctx.fillRect(left, top, w, h);
+
+                ctx.strokeStyle = "rgba(0, 229, 255, 0.45)";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(left, top, w, h);
+
+                // Rede (linha pontilhada central)
+                ctx.setLineDash([8, 8]);
+                ctx.strokeStyle = "rgba(255,255,255,0.55)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(TT.NET_X, top);
+                ctx.lineTo(TT.NET_X, top + h);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Placar grande no fundo
+                ctx.fillStyle = "rgba(255,255,255,0.05)";
+                ctx.font = "bold 130px 'Segoe UI', Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(tt.score1, CANVAS_W / 4, CANVAS_H / 2);
+                ctx.fillText(tt.score2, (CANVAS_W / 4) * 3, CANVAS_H / 2);
+
+                // Nomes no topo
+                ctx.font = "bold 14px 'Segoe UI', Arial";
+                ctx.fillStyle = "rgba(0, 229, 255, 0.6)";
+                ctx.fillText(name1El.textContent, CANVAS_W / 4, 26);
+                ctx.fillStyle = "rgba(255, 23, 68, 0.6)";
+                ctx.fillText(name2El.textContent, (CANVAS_W / 4) * 3, 26);
+
+                // Raquetes
+                drawTTPaddle(tt.p1X, tt.p1Y, "#00e5ff");
+                drawTTPaddle(tt.p2X, tt.p2Y, "#ff1744");
+
+                // Bola com sombra (altura)
+                if (tt.rallyActive) {
+                    // Sombra
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+                    ctx.beginPath();
+                    ctx.ellipse(tt.ballX, tt.ballY, TT.BALL_R + 2, (TT.BALL_R + 2) * 0.6, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Bola elevada
+                    const drawY = tt.ballY - tt.ballZ;
+                    const high = tt.ballZ > TT.NET_HEIGHT;
+
+                    ctx.fillStyle = high ? "rgba(255,255,255,0.35)" : "#ffffff";
+                    ctx.shadowColor = high ? "rgba(255,255,255,0.2)" : "#ffffff";
+                    ctx.shadowBlur = high ? 6 : 14;
+                    ctx.beginPath();
+                    ctx.arc(tt.ballX, drawY, TT.BALL_R, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // Linha vertical indicando altura
+                    if (tt.ballZ > 4) {
+                        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(tt.ballX, tt.ballY);
+                        ctx.lineTo(tt.ballX, drawY);
+                        ctx.stroke();
+                    }
+                }
+
+                // Aviso de bola alta (sem interação)
+                if (tt.rallyActive && tt.ballZ > TT.NET_HEIGHT) {
+                    ctx.fillStyle = "rgba(255, 234, 0, 0.8)";
+                    ctx.font = "bold 16px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText("Bola alta — sem interação", CANVAS_W / 2, 44);
+                }
+
+                if (!connected) {
+                    ctx.fillStyle = "rgba(0,0,0,0.55)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                    ctx.fillStyle = "rgba(255,255,255,0.6)";
+                    ctx.font = "24px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("Aguardando conexão...", CANVAS_W / 2, CANVAS_H / 2);
+                }
+
+                if (tt.gameOver) {
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    ctx.fillStyle = "#ffea00";
+                    ctx.font = "bold 46px 'Segoe UI', Arial";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#ffea00";
+                    ctx.shadowBlur = 20;
+                    ctx.fillText("🏆 " + tt.winner + " venceu!", CANVAS_W / 2, CANVAS_H / 2 - 20);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "rgba(255,255,255,0.6)";
+                    ctx.font = "18px 'Segoe UI', Arial";
+                    ctx.fillText(
+                        isHost ? "Pressione ENTER para jogar novamente" : "Aguardando host reiniciar...",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 30
+                    );
+                }
+            }
+
+            function drawTTPaddle(x, y, color) {
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 14;
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, TT.PADDLE_R, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = "rgba(0,0,0,0.3)";
+                ctx.beginPath();
+                ctx.arc(x, y, TT.PADDLE_R * 0.55, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // ══════════════════════════════════════
+            //  Reiniciar partida de Tênis de Mesa (host)
+            // ══════════════════════════════════════
+
+            window.addEventListener("keydown", e => {
+                if (
+                    e.key === "Enter" &&
+                    currentMinigame === "tableTennis" &&
+                    isHost &&
+                    tt.gameOver &&
+                    connected
+                ) {
+                    tt.score1 = 0;
+                    tt.score2 = 0;
+                    tt.gameOver = false;
+                    tt.winner = "";
+                    updateScoreDisplay();
+                    resetTTBall();
+                    broadcastTTState();
+                }
+            });
+
+            // ══════════════════════════════════════
+            //  Desenhar raquete do Pong
+            // ══════════════════════════════════════
+
+            function drawPaddle(x, y, color) {
+                const baseY = y;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 12;
+                ctx.fillStyle = color;
+
+                const r = 4;
+                ctx.beginPath();
+                ctx.moveTo(x + r, baseY);
+                ctx.lineTo(x + PADDLE_W - r, baseY);
+                ctx.quadraticCurveTo(x + PADDLE_W, baseY, x + PADDLE_W, baseY + r);
+                ctx.lineTo(x + PADDLE_W, baseY + PADDLE_H - r);
+                ctx.quadraticCurveTo(x + PADDLE_W, baseY + PADDLE_H, x + PADDLE_W - r, baseY + PADDLE_H);
+                ctx.lineTo(x + r, baseY + PADDLE_H);
+                ctx.quadraticCurveTo(x, baseY + PADDLE_H, x, baseY + PADDLE_H - r);
+                ctx.lineTo(x, baseY + r);
+                ctx.quadraticCurveTo(x, baseY, x + r, baseY);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+            }
+
+            // ══════════════════════════════════════
+            //  Utilitário
+            // ══════════════════════════════════════
+
+            function clamp(val, min, max) {
+                return Math.max(min, Math.min(max, val));
+            }
+
+            function distToSegment(px, py, x1, y1, x2, y2) {
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const len2 = dx * dx + dy * dy;
+
+                if (len2 === 0) {
+                    return Math.hypot(px - x1, py - y1);
+                }
+
+                let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+
+                const cx = x1 + t * dx;
+                const cy = y1 + t * dy;
+
+                return Math.hypot(px - cx, py - cy);
+            }
+
+            // ══════════════════════════════════════
+            //  Iniciar
+            // ══════════════════════════════════════
+
+            updateInfoText();
+            updateScoreDisplay();
+            updateNameDisplays();
+            resetBall();
+            resetTTBall();
+
+            requestAnimationFrame(gameLoop);
+
+        })();
+    </script>
+
+</body>
+
+</html>

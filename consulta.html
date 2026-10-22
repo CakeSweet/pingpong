@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Bolinha</title>
+
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            background: #181818;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        #menu {
+            padding: 20px;
+        }
+
+        #game {
+            position: relative;
+            width: 800px;
+            height: 500px;
+            margin: auto;
+
+            background: #252525;
+            border: 2px solid #555;
+
+            overflow: hidden;
+        }
+
+        .player {
+            position: absolute;
+
+            width: 30px;
+            height: 30px;
+
+            border-radius: 50%;
+
+            transform: translate(-50%, -50%);
+        }
+
+        #me {
+            background: #4caf50;
+        }
+
+        #other {
+            background: #f44336;
+        }
+
+        input,
+        button {
+            padding: 8px;
+            margin: 4px;
+        }
+
+        #status {
+            margin: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="menu">
+
+        <button id="hostButton">
+            Criar sala
+        </button>
+
+        <input
+            id="roomId"
+            placeholder="ID da sala"
+        >
+
+        <button id="joinButton">
+            Entrar
+        </button>
+
+        <div id="status">
+            Desconectado
+        </div>
+
+    </div>
+
+    <div id="game">
+
+        <div
+            id="me"
+            class="player"
+        ></div>
+
+        <div
+            id="other"
+            class="player"
+        ></div>
+
+    </div>
+
+    <script>
+        (() => {
+
+
+            const peer = new Peer();
+
+            let connection = null;
+
+            const meElement = document.getElementById("me");
+            const otherElement = document.getElementById("other");
+
+            const statusElement = document.getElementById("status");
+            const roomInput = document.getElementById("roomId");
+
+            const me = {
+                x: 200,
+                y: 250
+            };
+
+            const other = {
+                x: 600,
+                y: 250
+            };
+
+            const keys = {};
+
+            window.addEventListener("keydown", event => {
+                keys[event.key.toLowerCase()] = true;
+            });
+
+            window.addEventListener("keyup", event => {
+                keys[event.key.toLowerCase()] = false;
+            });
+
+            document
+                .getElementById("hostButton")
+                .addEventListener("click", () => {
+
+                    if (!peer.id) {
+                        statusElement.textContent = "Aguardando PeerJS...";
+                        return;
+                    }
+
+                    roomInput.value = peer.id;
+
+                    statusElement.textContent =
+                        "Sala criada: " + peer.id;
+                });
+
+            peer.on("connection", conn => {
+
+                connection = conn;
+
+                configureConnection();
+
+            });
+
+            document
+                .getElementById("joinButton")
+                .addEventListener("click", () => {
+
+                    const roomId = roomInput.value.trim();
+
+                    if (!roomId) {
+                        return;
+                    }
+
+                    connection = peer.connect(roomId);
+
+                    configureConnection();
+
+                });
+
+            function configureConnection() {
+
+                connection.on("open", () => {
+
+                    statusElement.textContent =
+                        "Conectado!";
+
+                });
+
+
+                connection.on("data", data => {
+
+                    if (data.type === "position") {
+
+                        other.x = data.x;
+                        other.y = data.y;
+
+                    }
+
+                });
+
+
+                connection.on("close", () => {
+
+                    statusElement.textContent =
+                        "Jogador desconectado";
+
+                });
+
+            }
+
+            function update() {
+
+                const speed = 3;
+
+                let moved = false;
+
+
+                if (keys["w"] || keys["arrowup"]) {
+                    me.y -= speed;
+                    moved = true;
+                }
+
+                if (keys["s"] || keys["arrowdown"]) {
+                    me.y += speed;
+                    moved = true;
+                }
+
+                if (keys["a"] || keys["arrowleft"]) {
+                    me.x -= speed;
+                    moved = true;
+                }
+
+                if (keys["d"] || keys["arrowright"]) {
+                    me.x += speed;
+                    moved = true;
+                }
+
+                me.x = Math.max(15, Math.min(785, me.x));
+                me.y = Math.max(15, Math.min(485, me.y));
+
+                if (
+                    moved &&
+                    connection &&
+                    connection.open
+                ) {
+
+                    connection.send({
+                        type: "position",
+                        x: me.x,
+                        y: me.y
+                    });
+
+                }
+
+
+                render();
+
+                requestAnimationFrame(update);
+
+            }
+
+            function render() {
+
+                meElement.style.left = me.x + "px";
+                meElement.style.top = me.y + "px";
+
+                otherElement.style.left = other.x + "px";
+                otherElement.style.top = other.y + "px";
+
+            }
+
+            peer.on("open", id => {
+
+                statusElement.textContent =
+                    "PeerJS pronto";
+
+            });
+
+
+            update();
+        })();
+    </script>
+
+</body>
+
+</html>
