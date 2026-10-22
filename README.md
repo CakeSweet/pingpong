@@ -2,6 +2,8 @@
 
 Jogo multiplayer de Pong e Tênis de Mesa feito com HTML5 Canvas e PeerJS.
 
+**Site publicado:** https://cakesweet.github.io/pingpong/
+
 ## Jogar
 
 Abra o `index.html` em um navegador ou acesse a versão publicada no GitHub Pages.
@@ -13,27 +15,15 @@ Abra o `index.html` em um navegador ou acesse a versão publicada no GitHub Page
 
 O deploy é feito pelo GitHub Actions a cada push na branch `main`.
 
-### Primeira publicação
+### Configuração (já realizada)
 
-1. Crie um repositório no GitHub (ex.: `ping-pong`).
-2. No repositório, vá em **Settings → Pages**.
-3. Em **Build and deployment → Source**, selecione **GitHub Actions**.
-4. Envie o código para a branch `main`:
-
-```bash
-git remote add origin https://github.com/SEU_USUARIO/ping-pong.git
-git push -u origin main
-```
-
-O workflow `.github/workflows/deploy.yml` fará o build e publicará o site em:
-
-```
-https://SEU_USUARIO.github.io/ping-pong/
-```
+- Repositório: https://github.com/CakeSweet/pingpong
+- Pages: **Settings → Pages → Source: GitHub Actions**
+- Workflow: `.github/workflows/deploy.yml`
 
 ### Atualizações
 
-Depois da configuração inicial, basta fazer push na `main`:
+Depois de qualquer alteração, basta fazer push na `main`:
 
 ```bash
 git add .
@@ -41,4 +31,4 @@ git commit -m "Atualiza o jogo"
 git push
 ```
 
-O GitHub Pages será atualizado automaticamente.
+O GitHub Actions publica automaticamente em https://cakesweet.github.io/pingpong/.
