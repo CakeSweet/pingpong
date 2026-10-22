@@ -86,12 +86,39 @@
             box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
         }
 
-        #switchButton {
-            background: linear-gradient(135deg, #76ff03, #2e7d32);
+        #gameSelector {
+            display: flex;
+            gap: 4px;
+            padding: 3px;
+            border-radius: 8px;
+            background: #0b1211;
+            border: 1px solid #1d3531;
+            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.7);
         }
 
-        #switchButton:hover {
-            box-shadow: 0 0 15px rgba(118, 255, 3, 0.5);
+        #gameSelector .gameTab {
+            background: transparent;
+            border: 1px solid transparent;
+            color: #6f8f88;
+            padding: 7px 11px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 0.5px;
+            transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+        }
+
+        #gameSelector .gameTab:hover {
+            transform: none;
+            box-shadow: none;
+            color: #bafff2;
+            background: rgba(120, 255, 220, 0.06);
+        }
+
+        #gameSelector .gameTab.active {
+            color: #04110d;
+            background: linear-gradient(135deg, #55ffa0, #16b86a);
+            box-shadow: 0 0 14px rgba(57, 255, 136, 0.45);
         }
 
         #status {
@@ -184,11 +211,11 @@
         }
 
         #scoreboard .p1 {
-            color: #00e5ff;
+            color: #39ff88;
         }
 
         #scoreboard .p2 {
-            color: #ff1744;
+            color: #ff4d5a;
         }
 
         #info {
@@ -334,9 +361,17 @@
             Entrar
         </button>
 
-        <button id="switchButton">
-            🎮 Trocar Minigame
-        </button>
+        <div id="gameSelector" role="tablist" aria-label="Seletor de jogos">
+            <button class="gameTab active" data-game="pong" role="tab" aria-selected="true">
+                CH 1 · PONG
+            </button>
+            <button class="gameTab" data-game="tableTennis" role="tab" aria-selected="false">
+                CH 2 · TÊNIS
+            </button>
+            <button class="gameTab" data-game="fishing" role="tab" aria-selected="false">
+                CH 3 · PESCA
+            </button>
+        </div>
 
         <div id="status">
             Iniciando...
@@ -405,7 +440,6 @@
             const PADDLE_W = 12;
             const PADDLE_H = 90;
             const PADDLE_SPEED = 6;
-            const PADDLE_MARGIN = 20;
 
             const BALL_RADIUS = 8;
             const BALL_INITIAL_SPEED = 5;
@@ -433,6 +467,38 @@
                 SERVE_DELAY: 66,                // frames (~1,1s)
                 POINT_DELAY: 90                 // frames (~1,5s)
             };
+
+            // ── Pong dentro da tela do CRT ──
+            const PONG = {
+                LEFT: 72,
+                RIGHT: CANVAS_W - 72,
+                TOP: 96,
+                BOTTOM: CANVAS_H - 84
+            };
+
+            // ── Pesca (estilo Stardew Valley) ──
+            const FISH = {
+                WIN_COUNT: 3,
+                CAST_RATE: 1 / 48,
+                BITE_MIN: 75,
+                BITE_MAX: 185,
+                BITE_WINDOW: 46,
+                RESULT_DELAY: 105,
+                REEL_ACCEL: 0.0040,
+                REEL_GRAVITY: 0.0024,
+                REEL_DAMPING: 0.86,
+                PROGRESS_GAIN: 0.010,
+                PROGRESS_LOSS: 0.0052
+            };
+
+            const FISH_TYPES = [
+                { name: "Sardinha", color: "#a8dcff", accent: "#e8f7ff", value: 20, difficulty: 0.75, min: 12, max: 28, weight: 30 },
+                { name: "Truta", color: "#7ddc8a", accent: "#d9ffd9", value: 45, difficulty: 1.0, min: 20, max: 45, weight: 24 },
+                { name: "Carpa", color: "#f2c46d", accent: "#fff0b8", value: 70, difficulty: 1.15, min: 30, max: 65, weight: 18 },
+                { name: "Bagre", color: "#b08cff", accent: "#e9dcff", value: 95, difficulty: 1.3, min: 40, max: 80, weight: 13 },
+                { name: "Dourado", color: "#ffd54f", accent: "#fff6c2", value: 140, difficulty: 1.45, min: 45, max: 90, weight: 9 },
+                { name: "Lendário", color: "#ff6b6b", accent: "#ffd6d6", value: 250, difficulty: 1.7, min: 70, max: 120, weight: 4 }
+            ];
 
             // ══════════════════════════════════════
             //  Sistema de Áudio (Web Audio API)
@@ -641,12 +707,53 @@
                 setTimeout(() => cleanTone(784, 0.16, 0.08, 0.005, 0.12), 160);
             }
 
+            // ── Sons da pesca ──
+
+            function sfxFishCast() {
+                sweepTone(420, 920, 0.18, 0.05);
+                softNoise(0.08, 0.02, 1600);
+            }
+
+            function sfxFishBite() {
+                cleanTone(1046, 0.1, 0.08, 0.005, 0.08);
+                setTimeout(() => cleanTone(1568, 0.12, 0.07, 0.005, 0.1), 90);
+            }
+
+            function sfxFishHook() {
+                sweepTone(760, 300, 0.12, 0.12);
+                softNoise(0.06, 0.03, 2200);
+            }
+
+            function sfxFishCatch() {
+                cleanTone(523, 0.12, 0.08, 0.005, 0.1);
+                setTimeout(() => cleanTone(659, 0.12, 0.08, 0.005, 0.1), 100);
+                setTimeout(() => cleanTone(784, 0.12, 0.08, 0.005, 0.1), 200);
+                setTimeout(() => cleanTone(1047, 0.35, 0.09, 0.005, 0.28), 300);
+            }
+
+            function sfxFishEscape() {
+                sweepTone(300, 120, 0.35, 0.08);
+            }
+
             // ══════════════════════════════════════
             //  Canvas & contexto
             // ══════════════════════════════════════
 
             const canvas = document.getElementById("gameCanvas");
             const ctx = canvas.getContext("2d");
+
+            // ── Pesca: entrada local (mouse, toque ou espaço) ──
+
+            function setFishHolding(holding) {
+                if (fish.localHolding === holding) return;
+                fish.localHolding = holding;
+
+                if (isHost) {
+                    fish.p1Holding = holding;
+                } else if (connection && connection.open) {
+                    connection.send({ type: "fishInput", holding: holding });
+                }
+            }
 
             // ── Mouse (Tênis estilo Outlast Trials) ──
             // Botão esquerdo = FOREHAND, botão direito = LOB.
@@ -687,6 +794,12 @@
             }
 
             canvas.addEventListener("mousedown", e => {
+                if (currentMinigame === "fishing") {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    setFishHolding(true);
+                    return;
+                }
                 if (currentMinigame !== "tableTennis") return;
                 if (e.button !== 0 && e.button !== 2) return;
                 e.preventDefault();
@@ -700,6 +813,12 @@
             });
 
             canvas.addEventListener("mouseup", e => {
+                if (currentMinigame === "fishing") {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    setFishHolding(false);
+                    return;
+                }
                 if (currentMinigame !== "tableTennis") return;
                 if (e.button !== 0 && e.button !== 2) return;
                 e.preventDefault();
@@ -714,14 +833,24 @@
                 if (currentMinigame === "tableTennis") e.preventDefault();
             });
 
-            // Toque: um dedo = forehand (segure para carregar)
+            // Toque: um dedo = forehand (segure para carregar) / pesca (segure para lançar e recolher)
             canvas.addEventListener("touchstart", e => {
+                if (currentMinigame === "fishing") {
+                    e.preventDefault();
+                    setFishHolding(true);
+                    return;
+                }
                 if (currentMinigame !== "tableTennis") return;
                 e.preventDefault();
                 startTTCharge("forehand");
             }, { passive: false });
 
             canvas.addEventListener("touchend", e => {
+                if (currentMinigame === "fishing") {
+                    e.preventDefault();
+                    setFishHolding(false);
+                    return;
+                }
                 if (currentMinigame !== "tableTennis") return;
                 e.preventDefault();
                 releaseTTCharge();
@@ -857,7 +986,13 @@
             //  Estado dos minigames
             // ══════════════════════════════════════
 
-            let currentMinigame = "pong"; // "pong" | "tableTennis"
+            let currentMinigame = "pong"; // "pong" | "tableTennis" | "fishing"
+
+            const GAME_LABELS = {
+                pong: "Pong",
+                tableTennis: "Tênis",
+                fishing: "Pesca"
+            };
 
             // ══════════════════════════════════════
             //  Estado do Pong
@@ -872,15 +1007,16 @@
             };
 
             const state = {
-                paddle1Y: CANVAS_H / 2 - PADDLE_H / 2,
-                paddle2Y: CANVAS_H / 2 - PADDLE_H / 2,
+                paddle1Y: (PONG.TOP + PONG.BOTTOM) / 2 - PADDLE_H / 2,
+                paddle2Y: (PONG.TOP + PONG.BOTTOM) / 2 - PADDLE_H / 2,
                 paddle1VY: 0,
                 paddle2VY: 0,
 
-                ballX: CANVAS_W / 2,
-                ballY: CANVAS_H / 2,
+                ballX: (PONG.LEFT + PONG.RIGHT) / 2,
+                ballY: (PONG.TOP + PONG.BOTTOM) / 2,
                 ballVX: BALL_INITIAL_SPEED,
                 ballVY: BALL_INITIAL_SPEED * 0.6,
+                ballTrail: [],
 
                 score1: 0,
                 score2: 0,
@@ -951,6 +1087,53 @@
             };
 
             // ══════════════════════════════════════
+            //  Estado da Pesca
+            // ══════════════════════════════════════
+
+            function createFishPanel() {
+                return {
+                    phase: "ready", // ready | cast | wait | bite | reel | result
+                    castPower: 0,
+                    biteTimer: 0,
+                    biteWindow: 0,
+                    reelY: 0.5,
+                    reelVY: 0,
+                    fishY: 0.5,
+                    fishVY: 0,
+                    fishTarget: 0.5,
+                    fishTimer: 0,
+                    progress: 0.4,
+                    barSize: 0.26,
+                    fish: null,
+                    result: null,
+                    resultTimer: 0,
+                    flash: 0,
+                    prevHolding: false
+                };
+            }
+
+            const fish = {
+                score1: 0,
+                score2: 0,
+                value1: 0,
+                value2: 0,
+                gameOver: false,
+                winner: "",
+                panels: {
+                    p1: createFishPanel(),
+                    p2: createFishPanel()
+                },
+                localHolding: false,
+                p1Holding: false,
+                p2Holding: false,
+                feedback: "",
+                feedbackTimer: 0,
+                screenFlash: 0
+            };
+
+            const fishSoundState = { p1: "ready", p2: "ready" };
+
+            // ══════════════════════════════════════
             //  Input do teclado
             // ══════════════════════════════════════
 
@@ -963,11 +1146,26 @@
                 if (["arrowup", "arrowdown", "arrowleft", "arrowright", " ", "enter"].includes(k)) {
                     e.preventDefault();
                 }
+
+                if (
+                    currentMinigame === "fishing" &&
+                    (k === " " || k === "arrowup") &&
+                    !e.repeat
+                ) {
+                    setFishHolding(true);
+                }
             });
 
             window.addEventListener("keyup", e => {
                 const k = e.key.toLowerCase();
                 keys[k] = false;
+
+                if (
+                    currentMinigame === "fishing" &&
+                    (k === " " || k === "arrowup")
+                ) {
+                    setFishHolding(false);
+                }
             });
 
             // ══════════════════════════════════════
@@ -1015,11 +1213,11 @@
                     updateNameDisplays();
                 });
 
-            document.getElementById("switchButton")
-                .addEventListener("click", () => {
-                    const next = currentMinigame === "pong" ? "tableTennis" : "pong";
-                    switchMinigame(next, true);
+            document.querySelectorAll("#gameSelector .gameTab").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    switchMinigame(btn.dataset.game, true);
                 });
+            });
 
             peer.on("connection", conn => {
                 connection = conn;
@@ -1046,16 +1244,38 @@
             //  Troca de minigame
             // ══════════════════════════════════════
 
+            function updateGameSelector() {
+                document.querySelectorAll("#gameSelector .gameTab").forEach(btn => {
+                    const active = btn.dataset.game === currentMinigame;
+                    btn.classList.toggle("active", active);
+                    btn.setAttribute("aria-selected", active ? "true" : "false");
+                });
+            }
+
             function switchMinigame(game, notifyPeer) {
                 if (currentMinigame === game) return;
+                if (!GAME_LABELS[game]) return;
+
+                // Encerra o loop visual do minigame que estava ativo
+                if (currentMinigame === "pong") {
+                    state.running = false;
+                } else if (currentMinigame === "tableTennis") {
+                    tt.rallyActive = false;
+                    tt.charging = false;
+                    tt.chargeShot = null;
+                    tt.charge = 0;
+                } else if (currentMinigame === "fishing") {
+                    fish.localHolding = false;
+                    fish.p1Holding = false;
+                    fish.p2Holding = false;
+                }
 
                 currentMinigame = game;
 
-                minigameLabel.textContent = "Minigame: " +
-                    (game === "pong" ? "Pong" : "Tênis");
+                minigameLabel.textContent = "Minigame: " + GAME_LABELS[game];
+                canvas.classList.add("crt-mode");
 
-                canvas.classList.toggle("crt-mode", game === "tableTennis");
-
+                updateGameSelector();
                 updateInfoText();
                 updateScoreDisplay();
 
@@ -1070,26 +1290,33 @@
                     state.winner = "";
                     state.countdown = 0;
                     resetBall();
-                } else {
+                } else if (game === "tableTennis") {
                     const matchOver =
                         tt.gameOver ||
                         tt.score1 >= WINNING_SCORE ||
                         tt.score2 >= WINNING_SCORE;
                     resetTTMatch(!matchOver);
+                } else {
+                    const matchOver =
+                        fish.gameOver ||
+                        fish.score1 >= FISH.WIN_COUNT ||
+                        fish.score2 >= FISH.WIN_COUNT;
+                    resetFishMatch(!matchOver);
                 }
 
                 if (notifyPeer && connection && connection.open) {
                     connection.send({ type: "switchMinigame", game: game });
                 }
 
-                addSystemMessage("Minigame alterado para: " +
-                    (game === "pong" ? "Pong" : "Tênis"));
+                addSystemMessage("Minigame alterado para: " + GAME_LABELS[game]);
 
                 if (connected && isHost) {
                     if (game === "pong") {
                         startCountdown();
-                    } else {
+                    } else if (game === "tableTennis") {
                         broadcastTTState();
+                    } else {
+                        broadcastFishState();
                     }
                 }
             }
@@ -1097,9 +1324,12 @@
             function updateInfoText() {
                 if (currentMinigame === "pong") {
                     infoEl.textContent = "W / S ou ↑ / ↓ para mover a raquete";
-                } else {
+                } else if (currentMinigame === "tableTennis") {
                     infoEl.textContent =
                         "LMB = Forehand · RMB = Lob · segure para carregar e solte no seu lado";
+                } else {
+                    infoEl.textContent =
+                        "LMB / Espaço: segure para lançar · solte · fisgue no “!” · segure para recolher";
                 }
             }
 
@@ -1123,9 +1353,12 @@
 
                         if (currentMinigame === "pong") {
                             startCountdown();
-                        } else {
+                        } else if (currentMinigame === "tableTennis") {
                             resetTTMatch(true);
                             broadcastTTState();
+                        } else {
+                            resetFishMatch(true);
+                            broadcastFishState();
                         }
                     }
                 });
@@ -1202,6 +1435,9 @@
                                 state.ballY = data.ballY;
                                 state.ballVX = data.ballVX;
                                 state.ballVY = data.ballVY;
+                                state.ballTrail = Array.isArray(data.trail)
+                                    ? data.trail
+                                    : state.ballTrail;
                                 state.score1 = data.score1;
                                 state.score2 = data.score2;
                                 state.running = data.running;
@@ -1291,6 +1527,68 @@
                                 updateScoreDisplay();
                             }
                             break;
+
+                        // ── Pesca: entrada do guest (guest → host) ──
+                        case "fishInput":
+                            if (isHost && currentMinigame === "fishing") {
+                                fish.p2Holding = !!data.holding;
+                            }
+                            break;
+
+                        // ── Pesca: estado completo (host → guest) ──
+                        case "fishState":
+                            if (!isHost && currentMinigame === "fishing") {
+                                const wasGameOver = fish.gameOver;
+                                const before = {
+                                    p1: fish.panels.p1.phase,
+                                    p2: fish.panels.p2.phase
+                                };
+
+                                fish.score1 = data.score1 || 0;
+                                fish.score2 = data.score2 || 0;
+                                fish.value1 = data.value1 || 0;
+                                fish.value2 = data.value2 || 0;
+                                fish.gameOver = !!data.gameOver;
+                                fish.winner = data.winner || "";
+                                fish.feedback = data.feedback || "";
+                                fish.feedbackTimer = data.feedbackTimer || 0;
+                                fish.screenFlash = data.screenFlash || 0;
+
+                                if (data.panels) {
+                                    fish.panels.p1 = {
+                                        ...fish.panels.p1,
+                                        ...data.panels.p1
+                                    };
+                                    fish.panels.p2 = {
+                                        ...fish.panels.p2,
+                                        ...data.panels.p2
+                                    };
+                                }
+
+                                for (const key of ["p1", "p2"]) {
+                                    const prev = before[key];
+                                    const next = fish.panels[key].phase;
+
+                                    if (prev === next) continue;
+
+                                    if (next === "wait" && prev === "cast") {
+                                        sfxFishCast();
+                                    } else if (next === "bite") {
+                                        sfxFishBite();
+                                    } else if (next === "reel") {
+                                        sfxFishHook();
+                                    } else if (next === "result") {
+                                        const result = fish.panels[key].result;
+                                        if (result && result.caught) sfxFishCatch();
+                                        else sfxFishEscape();
+                                    }
+                                }
+
+                                if (fish.gameOver && !wasGameOver) sfxWin();
+
+                                updateScoreDisplay();
+                            }
+                            break;
                     }
 
                 });
@@ -1299,6 +1597,9 @@
                     connected = false;
                     state.running = false;
                     tt.rallyActive = false;
+                    fish.localHolding = false;
+                    fish.p1Holding = false;
+                    fish.p2Holding = false;
                     statusEl.textContent = "Jogador desconectou.";
                     sfxDisconnect();
                     addSystemMessage(otherName + " desconectou.");
@@ -1347,8 +1648,9 @@
             }
 
             function resetBall() {
-                state.ballX = CANVAS_W / 2;
-                state.ballY = CANVAS_H / 2;
+                state.ballX = (PONG.LEFT + PONG.RIGHT) / 2;
+                state.ballY = (PONG.TOP + PONG.BOTTOM) / 2;
+                state.ballTrail = [];
 
                 const direction = Math.random() > 0.5 ? 1 : -1;
                 const angle = (Math.random() * 0.6 - 0.3);
@@ -1374,6 +1676,7 @@
                         ballY: state.ballY,
                         ballVX: state.ballVX,
                         ballVY: state.ballVY,
+                        trail: state.ballTrail.slice(-12),
                         score1: state.score1,
                         score2: state.score2,
                         running: state.running,
@@ -1392,9 +1695,12 @@
                 if (currentMinigame === "pong") {
                     score1El.textContent = state.score1;
                     score2El.textContent = state.score2;
-                } else {
+                } else if (currentMinigame === "tableTennis") {
                     score1El.textContent = tt.score1;
                     score2El.textContent = tt.score2;
+                } else {
+                    score1El.textContent = fish.score1;
+                    score2El.textContent = fish.score2;
                 }
             }
 
@@ -1424,7 +1730,7 @@
                             broadcastState();
                         }
                     }
-                } else {
+                } else if (currentMinigame === "tableTennis") {
                     updateTTLocalState();
 
                     if (isHost && connected) {
@@ -1435,6 +1741,18 @@
                         lastBroadcast = timestamp;
                         if (connected && isHost) {
                             broadcastTTState();
+                        }
+                    }
+                } else {
+                    // Pesca: o host simula os dois painéis
+                    if (isHost) {
+                        updateFishMatch();
+                    }
+
+                    if (timestamp - lastBroadcast >= BROADCAST_INTERVAL) {
+                        lastBroadcast = timestamp;
+                        if (connected && isHost) {
+                            broadcastFishState();
                         }
                     }
                 }
@@ -1463,7 +1781,7 @@
                         state.paddle1Y += PADDLE_SPEED;
                         moved = true;
                     }
-                    state.paddle1Y = clamp(state.paddle1Y, 0, CANVAS_H - PADDLE_H);
+                    state.paddle1Y = clamp(state.paddle1Y, PONG.TOP, PONG.BOTTOM - PADDLE_H);
                     state.paddle1VY = state.paddle1Y - before;
                 } else {
                     if (keys["w"] || keys["arrowup"]) {
@@ -1474,7 +1792,7 @@
                         state.paddle2Y += PADDLE_SPEED;
                         moved = true;
                     }
-                    state.paddle2Y = clamp(state.paddle2Y, 0, CANVAS_H - PADDLE_H);
+                    state.paddle2Y = clamp(state.paddle2Y, PONG.TOP, PONG.BOTTOM - PADDLE_H);
                     state.paddle2VY = state.paddle2Y - before;
 
                     if (moved && connection && connection.open) {
@@ -1498,23 +1816,26 @@
                 state.ballX += state.ballVX;
                 state.ballY += state.ballVY;
 
+                state.ballTrail.push({ x: state.ballX, y: state.ballY });
+                if (state.ballTrail.length > 12) state.ballTrail.shift();
+
                 // ── Colisão topo/baixo ──
-                if (state.ballY - BALL_RADIUS <= 0) {
-                    state.ballY = BALL_RADIUS;
+                if (state.ballY - BALL_RADIUS <= PONG.TOP) {
+                    state.ballY = PONG.TOP + BALL_RADIUS;
                     state.ballVY = Math.abs(state.ballVY);
                     sfxWallBounce();
                     sendSfxEvent("wallBounce");
                 }
-                if (state.ballY + BALL_RADIUS >= CANVAS_H) {
-                    state.ballY = CANVAS_H - BALL_RADIUS;
+                if (state.ballY + BALL_RADIUS >= PONG.BOTTOM) {
+                    state.ballY = PONG.BOTTOM - BALL_RADIUS;
                     state.ballVY = -Math.abs(state.ballVY);
                     sfxWallBounce();
                     sendSfxEvent("wallBounce");
                 }
 
                 // ── Colisão raquete esquerda (paddle1) ──
-                const p1Left = PADDLE_MARGIN;
-                const p1Right = PADDLE_MARGIN + PADDLE_W;
+                const p1Left = PONG.LEFT;
+                const p1Right = PONG.LEFT + PADDLE_W;
                 const p1Top = state.paddle1Y;
                 const p1Bottom = state.paddle1Y + PADDLE_H;
 
@@ -1555,8 +1876,8 @@
                 }
 
                 // ── Colisão raquete direita (paddle2) ──
-                const p2Left = CANVAS_W - PADDLE_MARGIN - PADDLE_W;
-                const p2Right = CANVAS_W - PADDLE_MARGIN;
+                const p2Left = PONG.RIGHT - PADDLE_W;
+                const p2Right = PONG.RIGHT;
                 const p2Top = state.paddle2Y;
                 const p2Bottom = state.paddle2Y + PADDLE_H;
 
@@ -1595,7 +1916,7 @@
                 }
 
                 // ── Gol esquerdo (ponto para jogador 2) ──
-                if (state.ballX - BALL_RADIUS <= 0) {
+                if (state.ballX - BALL_RADIUS <= PONG.LEFT) {
                     state.score2++;
                     updateScoreDisplay();
                     sfxGoal();
@@ -1606,7 +1927,7 @@
                 }
 
                 // ── Gol direito (ponto para jogador 1) ──
-                if (state.ballX + BALL_RADIUS >= CANVAS_W) {
+                if (state.ballX + BALL_RADIUS >= PONG.RIGHT) {
                     state.score1++;
                     updateScoreDisplay();
                     sfxGoal();
@@ -2118,14 +2439,299 @@
             }
 
             // ══════════════════════════════════════
+            //  PESCA — Lógica (host)
+            // ══════════════════════════════════════
+
+            function pickFish() {
+                const total = FISH_TYPES.reduce((sum, f) => sum + f.weight, 0);
+                let roll = Math.random() * total;
+
+                for (const f of FISH_TYPES) {
+                    roll -= f.weight;
+                    if (roll <= 0) return f;
+                }
+                return FISH_TYPES[0];
+            }
+
+            function resetFishMatch(keepScore) {
+                if (!keepScore) {
+                    fish.score1 = 0;
+                    fish.score2 = 0;
+                    fish.value1 = 0;
+                    fish.value2 = 0;
+                }
+
+                fish.gameOver = false;
+                fish.winner = "";
+                fish.feedback = "";
+                fish.feedbackTimer = 0;
+                fish.screenFlash = 0;
+                fish.localHolding = false;
+                fish.p1Holding = false;
+                fish.p2Holding = false;
+
+                fish.panels = {
+                    p1: createFishPanel(),
+                    p2: createFishPanel()
+                };
+
+                fishSoundState.p1 = "ready";
+                fishSoundState.p2 = "ready";
+
+                updateScoreDisplay();
+            }
+
+            function updateFishMatch() {
+                if (fish.feedbackTimer > 0) {
+                    fish.feedbackTimer--;
+                    if (fish.feedbackTimer <= 0) fish.feedback = "";
+                }
+                if (fish.screenFlash > 0) fish.screenFlash *= 0.9;
+
+                if (fish.gameOver) return;
+
+                updateFishPanel("p1", fish.p1Holding);
+
+                if (!fish.gameOver) {
+                    updateFishPanel("p2", fish.p2Holding);
+                }
+            }
+
+            function updateFishPanel(key, holding) {
+                const p = fish.panels[key];
+                const pressed = holding && !p.prevHolding;
+                const released = !holding && p.prevHolding;
+                p.prevHolding = holding;
+
+                if (p.flash > 0) p.flash *= 0.9;
+
+                switch (p.phase) {
+                    case "ready":
+                        if (pressed) {
+                            p.phase = "cast";
+                            p.castPower = 0;
+                        }
+                        break;
+
+                    case "cast":
+                        p.castPower = Math.min(1, p.castPower + FISH.CAST_RATE);
+                        if (released) {
+                            p.castPower = Math.max(0.15, p.castPower);
+                            p.phase = "wait";
+                            p.biteTimer = FISH.BITE_MIN +
+                                Math.random() * (FISH.BITE_MAX - FISH.BITE_MIN);
+                            p.biteWindow = 0;
+                            sfxFishCast();
+                        }
+                        break;
+
+                    case "wait":
+                        p.biteTimer--;
+                        if (p.biteTimer <= 0) {
+                            p.phase = "bite";
+                            p.biteWindow = FISH.BITE_WINDOW;
+                            p.flash = 1;
+                            sfxFishBite();
+                        }
+                        break;
+
+                    case "bite":
+                        p.biteWindow--;
+                        if (pressed) {
+                            startFishReel(key);
+                        } else if (p.biteWindow <= 0) {
+                            finishFishAttempt(key, false, "O PEIXE FUGIU");
+                        }
+                        break;
+
+                    case "reel":
+                        updateFishReel(key, holding);
+                        break;
+
+                    case "result":
+                        p.resultTimer--;
+                        if (p.resultTimer <= 0) {
+                            p.phase = "ready";
+                            p.result = null;
+                            p.fish = null;
+                            p.progress = 0.45;
+                            p.reelY = 0.5;
+                            p.reelVY = 0;
+                            p.fishY = 0.5;
+                            p.fishVY = 0;
+                        }
+                        break;
+                }
+            }
+
+            function startFishReel(key) {
+                const p = fish.panels[key];
+                const f = pickFish();
+
+                p.fish = f;
+                p.phase = "reel";
+                p.progress = 0.45;
+                p.reelY = 0.5;
+                p.reelVY = 0;
+                p.fishY = 0.5;
+                p.fishVY = 0;
+                p.fishTarget = 0.2 + Math.random() * 0.6;
+                p.fishTimer = 30 + Math.random() * 55;
+                p.barSize = clamp(
+                    0.36 - (f.difficulty - 1) * 0.07,
+                    0.22,
+                    0.36
+                );
+                p.flash = 1;
+                sfxFishHook();
+            }
+
+            function updateFishReel(key, holding) {
+                const p = fish.panels[key];
+                const f = p.fish || FISH_TYPES[0];
+
+                // Barra verde: sobe enquanto segura, cai ao soltar
+                if (holding) {
+                    p.reelVY += FISH.REEL_ACCEL;
+                } else {
+                    p.reelVY -= FISH.REEL_GRAVITY;
+                }
+                p.reelVY *= FISH.REEL_DAMPING;
+                p.reelY += p.reelVY;
+
+                if (p.reelY < 0) {
+                    p.reelY = 0;
+                    p.reelVY = 0;
+                }
+                if (p.reelY > 1) {
+                    p.reelY = 1;
+                    p.reelVY = 0;
+                }
+
+                // Peixe se move para alvos aleatórios
+                p.fishTimer--;
+                if (p.fishTimer <= 0) {
+                    p.fishTimer = 30 + Math.random() * 60;
+                    p.fishTarget = 0.08 + Math.random() * 0.84;
+                }
+
+                const fishSpeed = 0.0016 * f.difficulty;
+                p.fishVY += (p.fishTarget - p.fishY) * fishSpeed;
+                p.fishVY *= 0.92;
+                p.fishY += p.fishVY;
+
+                if (p.fishY < 0.04) {
+                    p.fishY = 0.04;
+                    p.fishVY = Math.abs(p.fishVY) * 0.3;
+                }
+                if (p.fishY > 0.96) {
+                    p.fishY = 0.96;
+                    p.fishVY = -Math.abs(p.fishVY) * 0.3;
+                }
+
+                const inside = Math.abs(p.fishY - p.reelY) <= p.barSize / 2;
+                if (inside) {
+                    p.progress = Math.min(1, p.progress + FISH.PROGRESS_GAIN);
+                } else {
+                    p.progress = Math.max(0, p.progress - FISH.PROGRESS_LOSS);
+                }
+
+                if (p.progress >= 1) {
+                    finishFishAttempt(key, true, "");
+                } else if (p.progress <= 0) {
+                    finishFishAttempt(key, false, "O PEIXE FUGIU");
+                }
+            }
+
+            function finishFishAttempt(key, caught, message) {
+                const p = fish.panels[key];
+                const f = p.fish;
+
+                p.phase = "result";
+                p.resultTimer = FISH.RESULT_DELAY;
+                p.flash = 1;
+                p.result = {
+                    caught: caught,
+                    fish: caught ? f : null,
+                    message: message
+                };
+
+                if (caught && f && !fish.gameOver) {
+                    const size = Math.floor(
+                        f.min + Math.random() * (f.max - f.min + 1)
+                    );
+                    const value = Math.round(
+                        f.value * (0.75 + (size / f.max) * 0.5)
+                    );
+
+                    p.result.size = size;
+                    p.result.value = value;
+
+                    if (key === "p1") {
+                        fish.score1++;
+                        fish.value1 += value;
+                    } else {
+                        fish.score2++;
+                        fish.value2 += value;
+                    }
+
+                    fish.feedback =
+                        (key === "p1" ? "J1" : "J2") +
+                        " pescou " + f.name + " (" + size + " cm)!";
+                    fish.feedbackTimer = 120;
+                    fish.screenFlash = 0.8;
+                    sfxFishCatch();
+                    updateScoreDisplay();
+
+                    const score = key === "p1" ? fish.score1 : fish.score2;
+                    if (score >= FISH.WIN_COUNT) {
+                        fish.gameOver = true;
+                        fish.winner = key === "p1"
+                            ? (isHost ? myName : otherName)
+                            : (isHost ? otherName : myName);
+                        sfxWin();
+                    }
+                } else {
+                    fish.feedback =
+                        (key === "p1" ? "J1" : "J2") +
+                        " perdeu o peixe...";
+                    fish.feedbackTimer = 100;
+                    sfxFishEscape();
+                }
+            }
+
+            function broadcastFishState() {
+                if (connection && connection.open && isHost) {
+                    connection.send({
+                        type: "fishState",
+                        score1: fish.score1,
+                        score2: fish.score2,
+                        value1: fish.value1,
+                        value2: fish.value2,
+                        gameOver: fish.gameOver,
+                        winner: fish.winner,
+                        feedback: fish.feedback,
+                        feedbackTimer: fish.feedbackTimer,
+                        screenFlash: fish.screenFlash,
+                        panels: {
+                            p1: fish.panels.p1,
+                            p2: fish.panels.p2
+                        }
+                    });
+                }
+            }
+
+            // ══════════════════════════════════════
             //  Renderização (dispatch)
             // ══════════════════════════════════════
 
             function render() {
                 if (currentMinigame === "pong") {
                     renderPong();
-                } else {
+                } else if (currentMinigame === "tableTennis") {
                     renderTableTennis();
+                } else {
+                    renderFishing();
                 }
             }
 
@@ -2134,55 +2740,99 @@
             // ══════════════════════════════════════
 
             function renderPong() {
-                ctx.fillStyle = "#0d1117";
-                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                const now = performance.now();
+                beginCRTScreen("#062c2a", "#031a1b", "#01090a");
+
+                const fieldW = PONG.RIGHT - PONG.LEFT;
+                const fieldH = PONG.BOTTOM - PONG.TOP;
+                const midX = (PONG.LEFT + PONG.RIGHT) / 2;
+                const midY = (PONG.TOP + PONG.BOTTOM) / 2;
+                const pad = n => String(n).padStart(2, "0");
+
+                // Campo
+                ctx.strokeStyle = "rgba(120,255,220,0.12)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(PONG.LEFT, PONG.TOP, fieldW, fieldH);
 
                 // Linha central tracejada
-                ctx.setLineDash([10, 10]);
-                ctx.strokeStyle = "rgba(255,255,255,0.12)";
+                ctx.setLineDash([9, 9]);
+                ctx.strokeStyle = "rgba(234,255,251,0.20)";
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(CANVAS_W / 2, 0);
-                ctx.lineTo(CANVAS_W / 2, CANVAS_H);
+                ctx.moveTo(midX, PONG.TOP);
+                ctx.lineTo(midX, PONG.BOTTOM);
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // Placar grande no fundo
-                ctx.fillStyle = "rgba(255,255,255,0.04)";
-                ctx.font = "bold 140px 'Segoe UI', Arial";
+                // Placar gigante no fundo
+                ctx.font = "bold 130px 'Courier New', monospace";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText(state.score1, CANVAS_W / 4, CANVAS_H / 2);
-                ctx.fillText(state.score2, (CANVAS_W / 4) * 3, CANVAS_H / 2);
+                ctx.fillStyle = "rgba(120,255,220,0.045)";
+                ctx.fillText(pad(state.score1), PONG.LEFT + fieldW * 0.25, midY);
+                ctx.fillText(pad(state.score2), PONG.LEFT + fieldW * 0.75, midY);
 
-                // Nomes no topo
-                ctx.font = "bold 14px 'Segoe UI', Arial";
-                ctx.fillStyle = "rgba(0, 229, 255, 0.5)";
+                // HUD de nomes/placar
+                const p1Name = isHost ? myName : otherName;
+                const p2Name = isHost ? otherName : myName;
+
+                ctx.font = "bold 11px 'Courier New', monospace";
+                ctx.textBaseline = "middle";
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#39ff88";
+                ctx.fillText(p1Name.toUpperCase().slice(0, 14), PONG.LEFT, 54);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#ff4d5a";
+                ctx.fillText(p2Name.toUpperCase().slice(0, 14), PONG.RIGHT, 54);
+
+                ctx.save();
+                ctx.font = "bold 34px 'Courier New', monospace";
                 ctx.textAlign = "center";
-                ctx.fillText(name1El.textContent, CANVAS_W / 4, 20);
-                ctx.fillStyle = "rgba(255, 23, 68, 0.5)";
-                ctx.fillText(name2El.textContent, (CANVAS_W / 4) * 3, 20);
+                ctx.fillStyle = "#eafffb";
+                ctx.shadowColor = "#7dffe0";
+                ctx.shadowBlur = 16;
+                ctx.fillText(`${pad(state.score1)} - ${pad(state.score2)}`, CANVAS_W / 2, 58);
+                ctx.restore();
+
+                ctx.fillStyle = "rgba(186,255,242,0.35)";
+                ctx.font = "9px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.fillText("FIRST TO 7", CANVAS_W / 2, 80);
 
                 // Raquetes
-                drawPaddle(PADDLE_MARGIN, state.paddle1Y, "#00e5ff");
-                drawPaddle(CANVAS_W - PADDLE_MARGIN - PADDLE_W, state.paddle2Y, "#ff1744");
+                drawPaddle(PONG.LEFT, state.paddle1Y, "#39ff88");
+                drawPaddle(PONG.RIGHT - PADDLE_W, state.paddle2Y, "#ff4d5a");
+
+                // Rastro da bola
+                for (let i = 0; i < state.ballTrail.length; i++) {
+                    const t = state.ballTrail[i];
+                    const a = ((i + 1) / state.ballTrail.length) * 0.20;
+                    ctx.fillStyle = `rgba(234,255,251,${a})`;
+                    ctx.beginPath();
+                    ctx.arc(
+                        t.x, t.y,
+                        BALL_RADIUS * (0.25 + (i / state.ballTrail.length) * 0.75),
+                        0, Math.PI * 2
+                    );
+                    ctx.fill();
+                }
 
                 // Bola
                 if (state.running) {
                     const gradient = ctx.createRadialGradient(
                         state.ballX, state.ballY, 0,
-                        state.ballX, state.ballY, BALL_RADIUS * 3
+                        state.ballX, state.ballY, BALL_RADIUS * 4
                     );
-                    gradient.addColorStop(0, "rgba(255, 255, 255, 0.3)");
-                    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+                    gradient.addColorStop(0, "rgba(234,255,251,0.35)");
+                    gradient.addColorStop(1, "rgba(234,255,251,0)");
                     ctx.fillStyle = gradient;
                     ctx.beginPath();
-                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS * 3, 0, Math.PI * 2);
+                    ctx.arc(state.ballX, state.ballY, BALL_RADIUS * 4, 0, Math.PI * 2);
                     ctx.fill();
 
-                    ctx.fillStyle = "#ffffff";
-                    ctx.shadowColor = "#ffffff";
-                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = "#eafffb";
+                    ctx.shadowColor = "#bafff2";
+                    ctx.shadowBlur = 18;
                     ctx.beginPath();
                     ctx.arc(state.ballX, state.ballY, BALL_RADIUS, 0, Math.PI * 2);
                     ctx.fill();
@@ -2191,58 +2841,97 @@
 
                 // Contagem regressiva
                 if (state.countdown > 0 && !state.gameOver) {
-                    ctx.fillStyle = "rgba(0, 229, 255, 0.9)";
-                    ctx.font = "bold 80px 'Segoe UI', Arial";
+                    ctx.fillStyle = "rgba(0,8,8,0.30)";
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 86px 'Courier New', monospace";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
-                    ctx.shadowColor = "#00e5ff";
-                    ctx.shadowBlur = 30;
-                    ctx.fillText(state.countdown, CANVAS_W / 2, CANVAS_H / 2);
+                    ctx.shadowColor = "#7dffe0";
+                    ctx.shadowBlur = 28;
+                    ctx.fillText(state.countdown, CANVAS_W / 2, CANVAS_H / 2 - 6);
                     ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "rgba(186,255,242,0.65)";
+                    ctx.font = "bold 12px 'Courier New', monospace";
+                    ctx.fillText("GET READY", CANVAS_W / 2, CANVAS_H / 2 + 58);
                 }
 
+                // Aguardando conexão
                 if (!connected) {
-                    ctx.fillStyle = "rgba(255,255,255,0.5)";
-                    ctx.font = "24px 'Segoe UI', Arial";
+                    ctx.fillStyle = "rgba(0,8,8,0.68)";
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 26px 'Courier New', monospace";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
-                    ctx.fillText("Aguardando conexão...", CANVAS_W / 2, CANVAS_H / 2);
-                }
-
-                if (state.gameOver) {
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-                    ctx.fillStyle = "#ffea00";
-                    ctx.font = "bold 48px 'Segoe UI', Arial";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.shadowColor = "#ffea00";
-                    ctx.shadowBlur = 20;
-                    ctx.fillText("🏆 " + state.winner + " venceu!", CANVAS_W / 2, CANVAS_H / 2 - 20);
+                    ctx.shadowColor = "#7dffe0";
+                    ctx.shadowBlur = 18;
+                    ctx.fillText("WAITING FOR PLAYER", CANVAS_W / 2, CANVAS_H / 2 - 10);
                     ctx.shadowBlur = 0;
 
-                    ctx.fillStyle = "rgba(255,255,255,0.6)";
-                    ctx.font = "18px 'Segoe UI', Arial";
+                    const blink = Math.sin(now / 300) > 0 ? "_" : " ";
+                    ctx.fillStyle = "rgba(186,255,242,0.7)";
+                    ctx.font = "14px 'Courier New', monospace";
                     ctx.fillText(
-                        isHost ? "Pressione ENTER para jogar novamente" : "Aguardando host reiniciar...",
+                        "AGUARDANDO CONEXÃO " + blink,
                         CANVAS_W / 2,
                         CANVAS_H / 2 + 30
                     );
                 }
+
+                // Fim de jogo
+                if (state.gameOver) {
+                    ctx.fillStyle = "rgba(0,8,8,0.80)";
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 38px 'Courier New', monospace";
+                    ctx.shadowColor = "#ffe14d";
+                    ctx.shadowBlur = 22;
+                    ctx.fillText("VITÓRIA", CANVAS_W / 2, CANVAS_H / 2 - 40);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 22px 'Courier New', monospace";
+                    ctx.fillText(state.winner.toUpperCase(), CANVAS_W / 2, CANVAS_H / 2 + 4);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.6)";
+                    ctx.font = "13px 'Courier New', monospace";
+                    ctx.fillText(
+                        isHost
+                            ? "ENTER PARA JOGAR NOVAMENTE"
+                            : "AGUARDANDO O HOST REINICIAR",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 44
+                    );
+                }
+
+                endCRTScreen(now, "PONG");
             }
 
             // ══════════════════════════════════════
             //  Render — Tênis de Mesa
             // ══════════════════════════════════════
 
-            function renderTableTennis() {
-                const now = performance.now();
-                const SX = 38;
-                const SY = 16;
-                const SW = CANVAS_W - 76;
-                const SH = CANVAS_H - 32;
+            // ══════════════════════════════════════
+            //  CRT compartilhado (Pong, Tênis e Pesca)
+            // ══════════════════════════════════════
 
+            const CRT = {
+                X: 38,
+                Y: 16,
+                W: CANVAS_W - 76,
+                H: CANVAS_H - 32,
+                R: 26
+            };
+
+            function drawCRTRoom() {
                 // ── Fundo da sala ──
                 ctx.fillStyle = "#050807";
                 ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -2273,51 +2962,843 @@
                 ctx.lineWidth = 5;
                 ctx.stroke();
 
-                roundRectPath(SX - 8, SY - 8, SW + 16, SH + 16, 30);
+                roundRectPath(CRT.X - 8, CRT.Y - 8, CRT.W + 16, CRT.H + 16, 30);
                 ctx.fillStyle = "#0a0f0e";
                 ctx.fill();
                 ctx.strokeStyle = "#0a2c2a";
                 ctx.lineWidth = 10;
                 ctx.stroke();
+            }
+
+            function beginCRTScreen(topColor, midColor, bottomColor) {
+                drawCRTRoom();
 
                 // ── Tela ──
                 ctx.save();
-                roundRectPath(SX, SY, SW, SH, 26);
+                roundRectPath(CRT.X, CRT.Y, CRT.W, CRT.H, CRT.R);
                 ctx.clip();
 
                 const screen = ctx.createRadialGradient(400, 235, 30, 400, 245, 440);
-                screen.addColorStop(0, "#073432");
-                screen.addColorStop(0.52, "#031e1f");
-                screen.addColorStop(1, "#010b0c");
+                screen.addColorStop(0, topColor || "#073432");
+                screen.addColorStop(0.52, midColor || "#031e1f");
+                screen.addColorStop(1, bottomColor || "#010b0c");
                 ctx.fillStyle = screen;
-                ctx.fillRect(SX, SY, SW, SH);
+                ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
 
                 // Grade/phosphor
                 ctx.strokeStyle = "rgba(57,255,136,0.025)";
                 ctx.lineWidth = 1;
-                for (let x = SX; x < SX + SW; x += 24) {
+                for (let x = CRT.X; x < CRT.X + CRT.W; x += 24) {
                     ctx.beginPath();
-                    ctx.moveTo(x, SY);
-                    ctx.lineTo(x, SY + SH);
+                    ctx.moveTo(x, CRT.Y);
+                    ctx.lineTo(x, CRT.Y + CRT.H);
                     ctx.stroke();
                 }
-                for (let y = SY; y < SY + SH; y += 24) {
+                for (let y = CRT.Y; y < CRT.Y + CRT.H; y += 24) {
                     ctx.beginPath();
-                    ctx.moveTo(SX, y);
-                    ctx.lineTo(SX + SW, y);
+                    ctx.moveTo(CRT.X, y);
+                    ctx.lineTo(CRT.X + CRT.W, y);
+                    ctx.stroke();
+                }
+            }
+
+            function drawCRTScanlines(now, tint = "120,255,220") {
+                for (let y = CRT.Y; y < CRT.Y + CRT.H; y += 3) {
+                    ctx.fillStyle = "rgba(0,0,0,0.16)";
+                    ctx.fillRect(CRT.X, y, CRT.W, 1);
+                }
+
+                const bandY = CRT.Y + ((now * 0.035) % CRT.H);
+                const band = ctx.createLinearGradient(0, bandY - 12, 0, bandY + 12);
+                band.addColorStop(0, `rgba(${tint},0)`);
+                band.addColorStop(0.5, `rgba(${tint},0.045)`);
+                band.addColorStop(1, `rgba(${tint},0)`);
+                ctx.fillStyle = band;
+                ctx.fillRect(CRT.X, bandY - 12, CRT.W, 24);
+
+                const vig = ctx.createRadialGradient(400, 250, 110, 400, 250, 430);
+                vig.addColorStop(0, "rgba(0,0,0,0)");
+                vig.addColorStop(0.7, "rgba(0,0,0,0.18)");
+                vig.addColorStop(1, "rgba(0,0,0,0.72)");
+                ctx.fillStyle = vig;
+                ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                // Flicker sutil
+                const flicker = 0.012 + Math.sin(now / 47) * 0.006;
+                ctx.fillStyle = `rgba(${tint},${flicker})`;
+                ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+            }
+
+            function drawCRTBezelDetails(now, label) {
+                const screws = [
+                    [36, 26],
+                    [CANVAS_W - 36, 26],
+                    [36, CANVAS_H - 26],
+                    [CANVAS_W - 36, CANVAS_H - 26]
+                ];
+
+                for (const [x, y] of screws) {
+                    ctx.fillStyle = "#0d1211";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = "#394641";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(x - 2, y);
+                    ctx.lineTo(x + 2, y);
                     ctx.stroke();
                 }
 
+                const on = Math.sin(now / 500) > 0;
+                ctx.fillStyle = on ? "#ff2a2a" : "#4a0a0a";
+                ctx.shadowColor = "#ff2a2a";
+                ctx.shadowBlur = on ? 12 : 0;
+                ctx.beginPath();
+                ctx.arc(CANVAS_W - 52, CANVAS_H - 22, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = "rgba(186,255,242,0.22)";
+                ctx.font = "9px 'Courier New', monospace";
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                ctx.fillText(label || "CRT", CANVAS_W - 66, CANVAS_H - 21);
+            }
+
+            function endCRTScreen(now, label, tint) {
+                drawCRTScanlines(now, tint);
+                ctx.restore();
+                drawCRTBezelDetails(now, label);
+            }
+
+            // ══════════════════════════════════════
+            //  Render — Tênis de Mesa
+            // ══════════════════════════════════════
+
+            function renderTableTennis() {
+                const now = performance.now();
+                beginCRTScreen("#073432", "#031e1f", "#010b0c");
                 drawTTCourt(now);
                 drawTTBall(now);
                 drawTTHud(now);
                 drawTTOverlays(now);
-                drawTTScanlines(now);
+                endCRTScreen(now, "TENNIS FOR TWO");
+            }
+
+            // ══════════════════════════════════════
+            //  Render — Pesca (estilo Stardew Valley)
+            // ══════════════════════════════════════
+
+            const FISH_UI = {
+                panelX: { p1: 52, p2: 408 },
+                panelW: 340,
+                panelY: 42,
+                panelH: 398,
+                sceneX: { p1: 60, p2: 416 },
+                sceneY: 88,
+                sceneW: 324,
+                sceneH: 208,
+                trackX: { p1: 334, p2: 690 },
+                trackY: 100,
+                trackW: 38,
+                trackH: 186,
+                progX: { p1: 376, p2: 732 },
+                progW: 8
+            };
+
+            function renderFishing() {
+                const now = performance.now();
+                beginCRTScreen("#0a2430", "#06141c", "#02080c");
+                drawFishHud(now);
+                drawFishPanel("p1", now);
+                drawFishPanel("p2", now);
+                drawFishOverlays(now);
+                endCRTScreen(now, "PESCA", "255,220,150");
+            }
+
+            function drawFishHud(now) {
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+
+                ctx.fillStyle = "#eafffb";
+                ctx.font = "bold 13px 'Courier New', monospace";
+                ctx.shadowColor = "#7dffe0";
+                ctx.shadowBlur = 12;
+                ctx.fillText("PESCA", CANVAS_W / 2, 24);
+                ctx.shadowBlur = 0;
+
+                if (fish.feedback) {
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 9px 'Courier New', monospace";
+                    ctx.fillText(fish.feedback.toUpperCase(), CANVAS_W / 2, 37);
+                } else {
+                    ctx.fillStyle = "rgba(186,255,242,0.42)";
+                    ctx.font = "8px 'Courier New', monospace";
+                    ctx.fillText("PRIMEIRO A 3 PEIXES", CANVAS_W / 2, 37);
+                }
+
+                ctx.strokeStyle = "rgba(120,255,220,0.08)";
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 8]);
+                ctx.beginPath();
+                ctx.moveTo(CANVAS_W / 2, 46);
+                ctx.lineTo(CANVAS_W / 2, 436);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = "rgba(234,255,251,0.52)";
+                ctx.font = "8px 'Courier New', monospace";
+                ctx.fillText(
+                    "LMB / ESPAÇO: SEGURE PARA LANÇAR · SOLTE · FISGUE NO ! · SEGURE PARA RECOLHER",
+                    CANVAS_W / 2,
+                    456
+                );
+            }
+
+            function drawFishPanel(key, now) {
+                const p = fish.panels[key];
+                const px = FISH_UI.panelX[key];
+                const pw = FISH_UI.panelW;
+                const py = FISH_UI.panelY;
+                const ph = FISH_UI.panelH;
+                const p1 = key === "p1";
+                const accent = p1 ? "#39ff88" : "#ff4d5a";
+                const accentRGB = p1 ? "57,255,136" : "255,77,90";
+
+                // Painel
+                roundRectPath(px, py, pw, ph, 10);
+                ctx.fillStyle = "rgba(0,10,12,0.50)";
+                ctx.fill();
+                ctx.strokeStyle = `rgba(${accentRGB},0.18)`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                const name = p1
+                    ? (isHost ? myName : otherName)
+                    : (isHost ? otherName : myName);
+                const score = p1 ? fish.score1 : fish.score2;
+                const value = p1 ? fish.value1 : fish.value2;
+                const local = (isHost && p1) || (!isHost && !p1);
+
+                ctx.textBaseline = "middle";
+
+                ctx.textAlign = "left";
+                ctx.fillStyle = accent;
+                ctx.font = "bold 11px 'Courier New', monospace";
+                ctx.fillText(name.toUpperCase().slice(0, 13), px + 10, 56);
+
+                if (local) {
+                    ctx.fillStyle = `rgba(${accentRGB},0.55)`;
+                    ctx.font = "7px 'Courier New', monospace";
+                    ctx.fillText("VOCÊ", px + 10, 69);
+                }
+
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#eafffb";
+                ctx.font = "bold 15px 'Courier New', monospace";
+                ctx.fillText(`${score} / ${FISH.WIN_COUNT}`, px + pw - 10, 55);
+
+                ctx.fillStyle = "rgba(234,255,251,0.42)";
+                ctx.font = "8px 'Courier New', monospace";
+                ctx.fillText(`$ ${value}`, px + pw - 10, 69);
+
+                drawFishScene(key, p, now);
+                drawReelTrack(key, p, now);
+
+                if (p.phase === "result" && p.result) {
+                    drawFishResult(key, p);
+                }
+
+                drawFishPrompt(key, p, now);
+            }
+
+            function drawFishScene(key, p, now) {
+                const sx = FISH_UI.sceneX[key];
+                const sy = FISH_UI.sceneY;
+                const sw = FISH_UI.sceneW;
+                const sh = FISH_UI.sceneH;
+                const waterY = sy + 126;
+
+                ctx.save();
+                roundRectPath(sx, sy, sw, sh, 10);
+                ctx.clip();
+
+                // Céu
+                const sky = ctx.createLinearGradient(0, sy, 0, waterY);
+                sky.addColorStop(0, "#4a8fbd");
+                sky.addColorStop(0.55, "#9ad9d0");
+                sky.addColorStop(1, "#f7d79a");
+                ctx.fillStyle = sky;
+                ctx.fillRect(sx, sy, sw, waterY - sy);
+
+                // Sol
+                ctx.fillStyle = "rgba(255,230,163,0.9)";
+                ctx.shadowColor = "#ffe6a3";
+                ctx.shadowBlur = 22;
+                ctx.beginPath();
+                ctx.arc(sx + sw - 94, sy + 30, 13, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Nuvens
+                ctx.fillStyle = "rgba(255,255,255,0.35)";
+                const cloudShift = Math.sin(now / 3200 + (key === "p2" ? 2 : 0)) * 8;
+                for (const [cx, cy, cw] of [
+                    [sx + 40, sy + 28, 42],
+                    [sx + 104, sy + 44, 28],
+                    [sx + 210, sy + 24, 34]
+                ]) {
+                    ctx.beginPath();
+                    ctx.ellipse(cx + cloudShift, cy, cw, 7, 0, 0, Math.PI * 2);
+                    ctx.ellipse(cx + cloudShift + cw * 0.35, cy - 5, cw * 0.55, 6, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Montanhas
+                ctx.fillStyle = "#5e947c";
+                ctx.beginPath();
+                ctx.moveTo(sx, waterY);
+                ctx.lineTo(sx + 26, waterY - 42);
+                ctx.lineTo(sx + 58, waterY - 20);
+                ctx.lineTo(sx + 92, waterY - 54);
+                ctx.lineTo(sx + 132, waterY - 22);
+                ctx.lineTo(sx + 168, waterY - 44);
+                ctx.lineTo(sx + 208, waterY - 16);
+                ctx.lineTo(sx + 250, waterY - 38);
+                ctx.lineTo(sx + 292, waterY - 12);
+                ctx.lineTo(sx + sw, waterY);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = "#456f5f";
+                ctx.beginPath();
+                ctx.moveTo(sx, waterY);
+                ctx.lineTo(sx + 42, waterY - 24);
+                ctx.lineTo(sx + 86, waterY - 8);
+                ctx.lineTo(sx + 138, waterY - 30);
+                ctx.lineTo(sx + 190, waterY - 10);
+                ctx.lineTo(sx + 244, waterY - 26);
+                ctx.lineTo(sx + sw, waterY - 4);
+                ctx.lineTo(sx + sw, waterY);
+                ctx.closePath();
+                ctx.fill();
+
+                // Árvores
+                for (const [tx, th] of [
+                    [sx + 20, 34],
+                    [sx + 42, 26],
+                    [sx + 64, 30],
+                    [sx + 96, 22]
+                ]) {
+                    ctx.fillStyle = "#5d3f2b";
+                    ctx.fillRect(tx - 1, waterY - 8, 3, 8);
+                    ctx.fillStyle = "#3a7d5c";
+                    ctx.beginPath();
+                    ctx.moveTo(tx - 10, waterY - 6);
+                    ctx.lineTo(tx, waterY - 6 - th);
+                    ctx.lineTo(tx + 10, waterY - 6);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // Água
+                const water = ctx.createLinearGradient(0, waterY, 0, sy + sh);
+                water.addColorStop(0, "#347fa0");
+                water.addColorStop(1, "#15506b");
+                ctx.fillStyle = water;
+                ctx.fillRect(sx, waterY, sw, sy + sh - waterY);
+
+                // Ondulações
+                ctx.lineWidth = 1;
+                for (let i = 0; i < 7; i++) {
+                    const wy = waterY + 12 + i * 11;
+                    const phase = now / 900 + i * 0.8 + (key === "p2" ? 1.2 : 0);
+                    ctx.strokeStyle = `rgba(200,255,255,${0.16 - i * 0.012})`;
+                    ctx.beginPath();
+                    for (let x = 0; x <= sw; x += 12) {
+                        const yy = wy + Math.sin(phase + x * 0.06) * 1.5;
+                        if (x === 0) ctx.moveTo(sx + x, yy);
+                        else ctx.lineTo(sx + x, yy);
+                    }
+                    ctx.stroke();
+                }
+
+                // Doca de madeira
+                ctx.fillStyle = "#8a5a3b";
+                ctx.fillRect(sx + 8, sy + sh - 26, 74, 18);
+                ctx.fillStyle = "#6d442b";
+                for (let x = sx + 12; x < sx + 80; x += 14) {
+                    ctx.fillRect(x, sy + sh - 26, 2, 18);
+                }
+                ctx.fillStyle = "#a9744b";
+                ctx.fillRect(sx + 8, sy + sh - 28, 74, 3);
+                ctx.fillStyle = "#5d3f2b";
+                ctx.fillRect(sx + 18, sy + sh - 8, 4, 8);
+                ctx.fillRect(sx + 64, sy + sh - 8, 4, 8);
+
+                // Vara e boia
+                const rodX = sx + sw - 34;
+                const rodY = sy + 14;
+                const bobberX = sx + 66 + p.castPower * 132;
+                const bobberY = waterY + 24 + Math.sin(now / 300 + (key === "p2" ? 1 : 0)) * 2;
+
+                if (p.phase !== "ready") {
+                    ctx.strokeStyle = "#8a5a3b";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(rodX, rodY);
+                    ctx.lineTo(rodX - 26, sy + 22);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = "rgba(235,255,251,0.45)";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(rodX - 26, sy + 22);
+                    ctx.quadraticCurveTo(
+                        rodX - 34,
+                        waterY - 18,
+                        bobberX,
+                        p.phase === "bite" ? bobberY + 6 : bobberY
+                    );
+                    ctx.stroke();
+
+                    drawBobber(
+                        bobberX,
+                        p.phase === "bite" ? bobberY + 6 : bobberY,
+                        now,
+                        p.phase === "bite"
+                    );
+                } else {
+                    ctx.strokeStyle = "#8a5a3b";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(rodX, rodY);
+                    ctx.lineTo(rodX - 26, sy + 22);
+                    ctx.stroke();
+                }
+
+                // Barra de força do lançamento
+                if (p.phase === "cast") {
+                    const bw = sw - 44;
+                    const bx = sx + 22;
+                    const by = sy + 13;
+
+                    ctx.fillStyle = "rgba(0,0,0,0.45)";
+                    ctx.fillRect(bx - 2, by - 2, bw + 4, 11);
+
+                    const grad = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+                    grad.addColorStop(0, "#39ff88");
+                    grad.addColorStop(0.65, "#ffe14d");
+                    grad.addColorStop(1, "#ff4d5a");
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(bx, by, bw * p.castPower, 7);
+
+                    ctx.strokeStyle = "rgba(234,255,251,0.45)";
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(bx, by, bw, 7);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 8px 'Courier New', monospace";
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText("FORÇA", bx, by - 4);
+                }
+
+                // Escurece um pouco durante o recolhimento
+                if (p.phase === "reel" || p.phase === "result") {
+                    ctx.fillStyle = "rgba(0,8,10,0.18)";
+                    ctx.fillRect(sx, sy, sw, sh);
+                }
 
                 ctx.restore();
 
-                // ── Detalhes da moldura ──
-                drawTTBezelDetails(now);
+                ctx.strokeStyle = "rgba(120,255,220,0.18)";
+                ctx.lineWidth = 1;
+                roundRectPath(sx, sy, sw, sh, 10);
+                ctx.stroke();
+            }
+
+            function drawBobber(x, y, now, biting) {
+                ctx.fillStyle = "rgba(200,255,255,0.18)";
+                ctx.beginPath();
+                ctx.ellipse(x, y + 6, 12, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.save();
+                ctx.shadowColor = biting ? "#ffe14d" : "#ff4d5a";
+                ctx.shadowBlur = biting ? 14 : 8;
+
+                ctx.fillStyle = "#ff4d5a";
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = "#f4ffff";
+                ctx.beginPath();
+                ctx.arc(x, y + 1.5, 2.5, 0, Math.PI);
+                ctx.fill();
+
+                ctx.strokeStyle = "rgba(0,0,0,0.5)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+
+                if (biting) {
+                    const bob = Math.sin(now / 90) * 3;
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 18px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#ffe14d";
+                    ctx.shadowBlur = 14;
+                    ctx.fillText("!", x, y - 24 + bob);
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            function drawReelTrack(key, p, now) {
+                const tx = FISH_UI.trackX[key];
+                const ty = FISH_UI.trackY;
+                const tw = FISH_UI.trackW;
+                const th = FISH_UI.trackH;
+                const px = FISH_UI.progX[key];
+                const pw = FISH_UI.progW;
+                const active = p.phase === "reel" || p.phase === "result";
+                const f = p.fish || FISH_TYPES[0];
+
+                // Fundo do painel do recolhimento
+                roundRectPath(tx - 5, ty - 16, tw + 10 + pw + 6, th + 22, 8);
+                ctx.fillStyle = "rgba(0,8,10,0.72)";
+                ctx.fill();
+                ctx.strokeStyle = "rgba(120,255,220,0.16)";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Trilho
+                ctx.fillStyle = "rgba(0,0,0,0.55)";
+                ctx.fillRect(tx, ty, tw, th);
+                ctx.strokeStyle = "rgba(120,255,220,0.18)";
+                ctx.strokeRect(tx, ty, tw, th);
+
+                const label = p.phase === "ready"
+                    ? "PRONTO"
+                    : p.phase === "cast"
+                        ? "FORÇA"
+                        : p.phase === "wait"
+                            ? "AGUARDE"
+                            : p.phase === "bite"
+                                ? "FISGUE!"
+                                : p.phase === "reel"
+                                    ? "RECOLHA"
+                                    : "RESULTADO";
+
+                ctx.fillStyle = p.phase === "bite" ? "#ffe14d" : "rgba(186,255,242,0.55)";
+                ctx.font = "bold 7px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.fillText(label, tx + tw / 2, ty - 4);
+
+                // Barra verde
+                if (active) {
+                    const barH = p.barSize * th;
+                    const centerY = ty + (1 - p.reelY) * th;
+                    const barTop = clamp(centerY - barH / 2, ty, ty + th - barH);
+
+                    ctx.save();
+                    ctx.shadowColor = "#39ff88";
+                    ctx.shadowBlur = 10;
+                    ctx.fillStyle = "rgba(57,255,136,0.55)";
+                    roundRectPath(tx + 2, barTop, tw - 4, barH, 5);
+                    ctx.fill();
+                    ctx.restore();
+
+                    ctx.fillStyle = "rgba(255,255,255,0.22)";
+                    ctx.fillRect(tx + 5, barTop + 3, 3, Math.max(0, barH - 6));
+
+                    // Peixe
+                    const fishY = ty + (1 - p.fishY) * th;
+                    drawPixelFish(tx + tw / 2, fishY, f.color, f.accent, 1.15);
+                } else {
+                    ctx.strokeStyle = "rgba(120,255,220,0.16)";
+                    ctx.setLineDash([4, 6]);
+                    ctx.beginPath();
+                    ctx.moveTo(tx + tw / 2, ty + 8);
+                    ctx.lineTo(tx + tw / 2, ty + th - 8);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.25)";
+                    ctx.font = "8px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText("—", tx + tw / 2, ty + th / 2);
+                }
+
+                // Barra de progresso
+                ctx.fillStyle = "rgba(0,0,0,0.55)";
+                ctx.fillRect(px, ty, pw, th);
+                ctx.strokeStyle = "rgba(120,255,220,0.18)";
+                ctx.strokeRect(px, ty, pw, th);
+
+                const prog = clamp(p.progress, 0, 1);
+                const fillH = prog * (th - 4);
+                const color = prog > 0.6
+                    ? "#39ff88"
+                    : prog > 0.3
+                        ? "#ffe14d"
+                        : "#ff4d5a";
+
+                if (active) {
+                    ctx.fillStyle = color;
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = 8;
+                    ctx.fillRect(px + 2, ty + th - 2 - fillH, pw - 4, fillH);
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = "rgba(120,255,220,0.06)";
+                    ctx.fillRect(px + 2, ty + th - 8, pw - 4, 6);
+                }
+            }
+
+            function drawFishResult(key, p) {
+                const sx = FISH_UI.sceneX[key];
+                const sy = FISH_UI.sceneY;
+                const sw = FISH_UI.sceneW;
+                const cardW = sw - 82;
+                const cardH = 128;
+                const cardX = sx + 18;
+                const cardY = sy + 42;
+                const caught = p.result.caught;
+                const f = p.result.fish || p.fish;
+
+                roundRectPath(cardX, cardY, cardW, cardH, 9);
+                ctx.fillStyle = "rgba(2,10,12,0.90)";
+                ctx.fill();
+                ctx.strokeStyle = caught ? "rgba(57,255,136,0.55)" : "rgba(255,77,90,0.55)";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.textBaseline = "middle";
+
+                if (caught && f) {
+                    drawPixelFish(cardX + 38, cardY + 58, f.color, f.accent, 2.4);
+
+                    ctx.textAlign = "left";
+                    ctx.fillStyle = "#39ff88";
+                    ctx.font = "bold 11px 'Courier New', monospace";
+                    ctx.fillText("PEGOU!", cardX + 72, cardY + 28);
+
+                    ctx.fillStyle = f.color;
+                    ctx.font = "bold 13px 'Courier New', monospace";
+                    ctx.fillText(f.name.toUpperCase(), cardX + 72, cardY + 50);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "10px 'Courier New', monospace";
+                    ctx.fillText(`${p.result.size} cm`, cardX + 72, cardY + 70);
+
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 12px 'Courier New', monospace";
+                    ctx.fillText(`$ ${p.result.value}`, cardX + 72, cardY + 90);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.45)";
+                    ctx.font = "7px 'Courier New', monospace";
+                    ctx.fillText("MAIS UMA TENTATIVA...", cardX + 72, cardY + 110);
+                } else {
+                    ctx.textAlign = "left";
+                    ctx.fillStyle = "#ff4d5a";
+                    ctx.font = "bold 12px 'Courier New', monospace";
+                    ctx.fillText("ESCAPOU!", cardX + 18, cardY + 32);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "10px 'Courier New', monospace";
+                    ctx.fillText(
+                        p.result.message || "O PEIXE FUGIU",
+                        cardX + 18,
+                        cardY + 56
+                    );
+
+                    ctx.fillStyle = "rgba(186,255,242,0.45)";
+                    ctx.font = "8px 'Courier New', monospace";
+                    ctx.fillText("TENTE NOVAMENTE", cardX + 18, cardY + 80);
+                }
+            }
+
+            function drawFishPrompt(key, p, now) {
+                const px = FISH_UI.panelX[key] + FISH_UI.panelW / 2;
+                const py = 322;
+                const blink = Math.sin(now / 110) > 0;
+
+                let text = "";
+                let color = "rgba(186,255,242,0.62)";
+
+                if (p.phase === "ready") {
+                    text = "LMB / ESPAÇO PARA LANÇAR";
+                } else if (p.phase === "cast") {
+                    text = "SOLTE PARA LANÇAR";
+                    color = "#ffe14d";
+                } else if (p.phase === "wait") {
+                    text = "AGUARDE O PEIXE...";
+                } else if (p.phase === "bite") {
+                    text = blink ? "FISGUE! [LMB]" : "FISGUE!";
+                    color = "#ffe14d";
+                } else if (p.phase === "reel") {
+                    text = "SEGURE / SOLTE PARA RECOLHER";
+                    color = "#39ff88";
+                } else if (p.phase === "result") {
+                    text = p.result && p.result.caught
+                        ? "PEIXE FISGADO!"
+                        : "QUE PENA...";
+                    color = p.result && p.result.caught ? "#39ff88" : "#ff4d5a";
+                }
+
+                ctx.fillStyle = color;
+                ctx.font = "bold 10px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(text, px, py);
+
+                if (p.phase === "reel") {
+                    ctx.fillStyle = "rgba(186,255,242,0.38)";
+                    ctx.font = "8px 'Courier New', monospace";
+                    ctx.fillText(
+                        "MANTENHA O PEIXE NA ÁREA VERDE",
+                        px,
+                        py + 18
+                    );
+                }
+
+                if (p.phase === "reel" || p.phase === "result") {
+                    const pct = Math.round(clamp(p.progress, 0, 1) * 100);
+                    ctx.fillStyle = "rgba(186,255,242,0.34)";
+                    ctx.font = "8px 'Courier New', monospace";
+                    ctx.fillText(pct + "%", px, py + 34);
+                }
+
+                // Progresso de peixes fisgados
+                ctx.fillStyle = "rgba(186,255,242,0.32)";
+                ctx.font = "7px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.fillText(
+                    "PEIXES FISGADOS",
+                    px,
+                    FISH_UI.panelY + FISH_UI.panelH - 58
+                );
+
+                const score = key === "p1" ? fish.score1 : fish.score2;
+                const accent = key === "p1" ? "#39ff88" : "#ff4d5a";
+                const dotY = FISH_UI.panelY + FISH_UI.panelH - 36;
+                const startX = px - 28;
+
+                for (let i = 0; i < FISH.WIN_COUNT; i++) {
+                    const filled = i < score;
+                    drawPixelFish(
+                        startX + i * 28,
+                        dotY,
+                        filled ? accent : "rgba(186,255,242,0.15)",
+                        filled ? "#04110d" : "rgba(186,255,242,0.15)",
+                        1.25
+                    );
+                }
+            }
+
+            function drawFishOverlays(now) {
+                if (fish.screenFlash > 0) {
+                    ctx.fillStyle = `rgba(255,255,255,${fish.screenFlash * 0.07})`;
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+                }
+
+                if (!connected) {
+                    ctx.fillStyle = "rgba(0,8,8,0.68)";
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 26px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#7dffe0";
+                    ctx.shadowBlur = 18;
+                    ctx.fillText("WAITING FOR PLAYER", CANVAS_W / 2, CANVAS_H / 2 - 10);
+                    ctx.shadowBlur = 0;
+
+                    const blink = Math.sin(now / 300) > 0 ? "_" : " ";
+                    ctx.fillStyle = "rgba(186,255,242,0.7)";
+                    ctx.font = "14px 'Courier New', monospace";
+                    ctx.fillText(
+                        "AGUARDANDO CONEXÃO " + blink,
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 30
+                    );
+                    return;
+                }
+
+                if (fish.gameOver) {
+                    ctx.fillStyle = "rgba(0,8,8,0.82)";
+                    ctx.fillRect(CRT.X, CRT.Y, CRT.W, CRT.H);
+
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 38px 'Courier New', monospace";
+                    ctx.shadowColor = "#ffe14d";
+                    ctx.shadowBlur = 22;
+                    ctx.fillText("VITÓRIA", CANVAS_W / 2, CANVAS_H / 2 - 44);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 22px 'Courier New', monospace";
+                    ctx.fillText(fish.winner.toUpperCase(), CANVAS_W / 2, CANVAS_H / 2);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.6)";
+                    ctx.font = "13px 'Courier New', monospace";
+                    ctx.fillText(
+                        isHost
+                            ? "ENTER PARA JOGAR NOVAMENTE"
+                            : "AGUARDANDO O HOST REINICIAR",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 44
+                    );
+
+                    ctx.fillStyle = "rgba(186,255,242,0.38)";
+                    ctx.font = "10px 'Courier New', monospace";
+                    ctx.fillText(
+                        `PEIXES: ${fish.score1} - ${fish.score2}  ·  $ ${fish.value1} - $ ${fish.value2}`,
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 72
+                    );
+                }
+            }
+
+            function drawPixelFish(x, y, color, accent, scale = 1) {
+                const s = Math.max(1, scale);
+
+                ctx.save();
+                ctx.fillStyle = color;
+
+                // Corpo
+                ctx.fillRect(x - 6 * s, y - 2 * s, 8 * s, 4 * s);
+                ctx.fillRect(x - 8 * s, y - 1 * s, 2 * s, 2 * s);
+
+                // Cauda
+                ctx.fillRect(x + 2 * s, y - 4 * s, 2 * s, 8 * s);
+                ctx.fillRect(x + 4 * s, y - 3 * s, 2 * s, 6 * s);
+
+                // Barbatana
+                ctx.fillRect(x - 2 * s, y - 4 * s, 3 * s, 2 * s);
+
+                // Olho
+                ctx.fillStyle = accent;
+                ctx.fillRect(x - 3 * s, y - 1 * s, 1.5 * s, 1.5 * s);
+                ctx.fillStyle = "#04110d";
+                ctx.fillRect(x - 3 * s, y - 1 * s, 0.7 * s, 0.7 * s);
+
+                ctx.restore();
             }
 
             // ── Quadra em perspectiva ──
@@ -2830,79 +4311,6 @@
                 }
             }
 
-            // ── Scanlines, brilho e vinheta ──
-            function drawTTScanlines(now) {
-                const SX = 38;
-                const SY = 16;
-                const SW = CANVAS_W - 76;
-                const SH = CANVAS_H - 32;
-
-                for (let y = SY; y < SY + SH; y += 3) {
-                    ctx.fillStyle = "rgba(0,0,0,0.16)";
-                    ctx.fillRect(SX, y, SW, 1);
-                }
-
-                const bandY = SY + ((now * 0.035) % SH);
-                const band = ctx.createLinearGradient(0, bandY - 12, 0, bandY + 12);
-                band.addColorStop(0, "rgba(120,255,220,0)");
-                band.addColorStop(0.5, "rgba(120,255,220,0.045)");
-                band.addColorStop(1, "rgba(120,255,220,0)");
-                ctx.fillStyle = band;
-                ctx.fillRect(SX, bandY - 12, SW, 24);
-
-                const vig = ctx.createRadialGradient(400, 250, 110, 400, 250, 430);
-                vig.addColorStop(0, "rgba(0,0,0,0)");
-                vig.addColorStop(0.7, "rgba(0,0,0,0.18)");
-                vig.addColorStop(1, "rgba(0,0,0,0.72)");
-                ctx.fillStyle = vig;
-                ctx.fillRect(SX, SY, SW, SH);
-
-                // Flicker sutil
-                const flicker = 0.012 + Math.sin(now / 47) * 0.006;
-                ctx.fillStyle = `rgba(120,255,220,${flicker})`;
-                ctx.fillRect(SX, SY, SW, SH);
-            }
-
-            function drawTTBezelDetails(now) {
-                const screws = [
-                    [36, 26],
-                    [CANVAS_W - 36, 26],
-                    [36, CANVAS_H - 26],
-                    [CANVAS_W - 36, CANVAS_H - 26]
-                ];
-
-                for (const [x, y] of screws) {
-                    ctx.fillStyle = "#0d1211";
-                    ctx.beginPath();
-                    ctx.arc(x, y, 5, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = "#394641";
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.arc(x, y, 4, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(x - 2, y);
-                    ctx.lineTo(x + 2, y);
-                    ctx.stroke();
-                }
-
-                const on = Math.sin(now / 500) > 0;
-                ctx.fillStyle = on ? "#ff2a2a" : "#4a0a0a";
-                ctx.shadowColor = "#ff2a2a";
-                ctx.shadowBlur = on ? 12 : 0;
-                ctx.beginPath();
-                ctx.arc(CANVAS_W - 52, CANVAS_H - 22, 3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-
-                ctx.fillStyle = "rgba(186,255,242,0.22)";
-                ctx.font = "9px 'Courier New', monospace";
-                ctx.textAlign = "right";
-                ctx.textBaseline = "middle";
-                ctx.fillText("TENNIS FOR TWO", CANVAS_W - 66, CANVAS_H - 21);
-            }
-
             // ══════════════════════════════════════
             //  Reiniciar partida de Tênis de Mesa (host)
             // ══════════════════════════════════════
@@ -2917,6 +4325,20 @@
                 ) {
                     resetTTMatch(false);
                     broadcastTTState();
+                }
+            });
+
+            // Reiniciar partida de Pesca (host)
+            window.addEventListener("keydown", e => {
+                if (
+                    e.key === "Enter" &&
+                    currentMinigame === "fishing" &&
+                    isHost &&
+                    fish.gameOver &&
+                    connected
+                ) {
+                    resetFishMatch(false);
+                    broadcastFishState();
                 }
             });
 
@@ -2976,11 +4398,39 @@
             updateNameDisplays();
             resetBall();
             resetTTMatch(true);
+            resetFishMatch(true);
+            canvas.classList.add("crt-mode");
+            updateGameSelector();
 
-            // Link direto para o Tênis: index.html?game=tt
+            // Hook de depuração (não afeta o jogo normal)
+            if (urlParams.get("debug") === "1") {
+                window.__ping = {
+                    fish,
+                    state,
+                    tt,
+                    switchMinigame,
+                    setFishHolding,
+                    resetFishMatch,
+                    finishFishAttempt,
+                    PONG,
+                    CANVAS_W,
+                    CANVAS_H,
+                    PADDLE_H
+                };
+            }
+
+            // Links diretos: ?game=pong | ?game=tt | ?game=fish
             const gameFromUrl = urlParams.get("game");
-            if (gameFromUrl === "tt" || gameFromUrl === "tableTennis") {
-                switchMinigame("tableTennis", false);
+            const gameAliases = {
+                pong: "pong",
+                tt: "tableTennis",
+                tableTennis: "tableTennis",
+                fish: "fishing",
+                fishing: "fishing"
+            };
+
+            if (gameFromUrl && gameAliases[gameFromUrl]) {
+                switchMinigame(gameAliases[gameFromUrl], false);
             }
 
             requestAnimationFrame(gameLoop);
