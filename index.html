@@ -161,6 +161,15 @@
             box-shadow:
                 0 0 30px rgba(0, 229, 255, 0.15),
                 inset 0 0 60px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.4s, box-shadow 0.4s;
+        }
+
+        #gameCanvas.crt-mode {
+            border-color: #2a3533;
+            box-shadow:
+                0 0 42px rgba(57, 255, 136, 0.12),
+                0 0 18px rgba(0, 0, 0, 0.9),
+                inset 0 0 70px rgba(0, 0, 0, 0.75);
         }
 
         /* ── Scoreboard ── */
@@ -405,19 +414,24 @@
 
             const WINNING_SCORE = 7;
 
-            // ── Tênis de Mesa (top-down) ──
+            // ── Tênis (estilo Outlast Trials / Tennis for Two) ──
             const TT = {
-                MARGIN: 50,
+                LEFT: 105,
+                RIGHT: CANVAS_W - 105,
+                TABLE_Y: 372,
                 NET_X: CANVAS_W / 2,
-                PADDLE_R: 18,
-                BALL_R: 7,
-                PADDLE_SPEED: 5.5,
-                GRAVITY: 0.35,
-                ELASTICITY: 0.72,
-                FRICTION: 0.96,
-                MAX_SPEED: 15,
-                HIT_HEIGHT: 60,   // altura máx. para rebater
-                NET_HEIGHT: 60    // acima disso ninguém interage
+                NET_TOP: 334,
+                TOO_HIGH_Y: 154,
+                BALL_R: 6,
+                GRAVITY: 0.34,
+                BOUNCE: 0.72,
+                MAX_CHARGE_TIME: 0.95,          // segundos p/ carga máxima
+                CHARGE_RATE: 1 / (60 * 0.95),
+                STAMINA_MAX: 100,
+                STAMINA_REGEN: 0.28,            // por frame (~16,8/s)
+                STAMINA_CHARGE_REGEN: 0.08,     // por frame (~4,8/s)
+                SERVE_DELAY: 66,                // frames (~1,1s)
+                POINT_DELAY: 90                 // frames (~1,5s)
             };
 
             // ══════════════════════════════════════
@@ -587,6 +601,46 @@
                 sweepTone(300, 800, 0.18, 0.09);
             }
 
+            // ── Sons do Tennis for Two (CRT) ──
+
+            function sfxTTChargeStart() {
+                cleanTone(320, 0.06, 0.04, 0.005, 0.05);
+            }
+
+            function sfxTTToss() {
+                sweepTone(420, 720, 0.12, 0.05);
+            }
+
+            function sfxTTHit(shot, charge, spike) {
+                if (shot === "lob") {
+                    sweepTone(320, 760, 0.16, 0.08);
+                    cleanTone(560 + charge * 180, 0.1, 0.04, 0.005, 0.08);
+                } else if (spike) {
+                    sweepTone(900, 180, 0.12, 0.14);
+                    softNoise(0.07, 0.05, 1800);
+                    cleanTone(140, 0.12, 0.08, 0.005, 0.1);
+                } else {
+                    sweepTone(720, 300, 0.09, 0.12);
+                    softNoise(0.05, 0.03, 2600);
+                    cleanTone(220 + charge * 120, 0.07, 0.05, 0.005, 0.06);
+                }
+            }
+
+            function sfxTTBounce() {
+                sweepTone(880, 420, 0.055, 0.055);
+            }
+
+            function sfxTTNet() {
+                cleanTone(140, 0.18, 0.09, 0.005, 0.15);
+                softNoise(0.12, 0.04, 500);
+            }
+
+            function sfxTTScore() {
+                cleanTone(523, 0.09, 0.07, 0.005, 0.07);
+                setTimeout(() => cleanTone(659, 0.09, 0.07, 0.005, 0.07), 80);
+                setTimeout(() => cleanTone(784, 0.16, 0.08, 0.005, 0.12), 160);
+            }
+
             // ══════════════════════════════════════
             //  Canvas & contexto
             // ══════════════════════════════════════
@@ -594,25 +648,83 @@
             const canvas = document.getElementById("gameCanvas");
             const ctx = canvas.getContext("2d");
 
-            // ── Mouse (controle da raquete no Tênis de Mesa) ──
-            let mouseX = CANVAS_W / 2;
-            let mouseY = CANVAS_H / 2;
-            let mouseActive = false;
+            // ── Mouse (Tênis estilo Outlast Trials) ──
+            // Botão esquerdo = FOREHAND, botão direito = LOB.
+            // Segure para carregar e solte para rebater.
 
-            canvas.addEventListener("mousemove", e => {
-                const rect = canvas.getBoundingClientRect();
-                mouseX = (e.clientX - rect.left) * (CANVAS_W / rect.width);
-                mouseY = (e.clientY - rect.top) * (CANVAS_H / rect.height);
-                mouseActive = true;
+            function startTTCharge(shot) {
+                if (currentMinigame !== "tableTennis") return;
+                if (!connected || tt.gameOver) return;
+                if (tt.phase === "point" || tt.phase === "gameover") return;
+
+                tt.charging = true;
+                tt.chargeShot = shot;
+                tt.charge = 0;
+                sfxTTChargeStart();
+                sendTTCharge();
+            }
+
+            function cancelTTCharge() {
+                if (!tt.charging) return;
+                tt.charging = false;
+                tt.chargeShot = null;
+                tt.charge = 0;
+                sendTTCharge();
+            }
+
+            function releaseTTCharge() {
+                if (!tt.charging) return;
+
+                const shot = tt.chargeShot;
+                const charge = tt.charge;
+
+                tt.charging = false;
+                tt.chargeShot = null;
+                tt.charge = 0;
+
+                releaseTTShot(shot, charge);
+                sendTTCharge();
+            }
+
+            canvas.addEventListener("mousedown", e => {
+                if (currentMinigame !== "tableTennis") return;
+                if (e.button !== 0 && e.button !== 2) return;
+                e.preventDefault();
+
+                const shot = e.button === 0 ? "forehand" : "lob";
+
+                if (tt.charging && tt.chargeShot === shot) return;
+                if (tt.charging) cancelTTCharge();
+
+                startTTCharge(shot);
             });
 
-            canvas.addEventListener("touchmove", e => {
+            canvas.addEventListener("mouseup", e => {
+                if (currentMinigame !== "tableTennis") return;
+                if (e.button !== 0 && e.button !== 2) return;
                 e.preventDefault();
-                const touch = e.touches[0];
-                const rect = canvas.getBoundingClientRect();
-                mouseX = (touch.clientX - rect.left) * (CANVAS_W / rect.width);
-                mouseY = (touch.clientY - rect.top) * (CANVAS_H / rect.height);
-                mouseActive = true;
+
+                const shot = e.button === 0 ? "forehand" : "lob";
+                if (!tt.charging || tt.chargeShot !== shot) return;
+
+                releaseTTCharge();
+            });
+
+            canvas.addEventListener("contextmenu", e => {
+                if (currentMinigame === "tableTennis") e.preventDefault();
+            });
+
+            // Toque: um dedo = forehand (segure para carregar)
+            canvas.addEventListener("touchstart", e => {
+                if (currentMinigame !== "tableTennis") return;
+                e.preventDefault();
+                startTTCharge("forehand");
+            }, { passive: false });
+
+            canvas.addEventListener("touchend", e => {
+                if (currentMinigame !== "tableTennis") return;
+                e.preventDefault();
+                releaseTTCharge();
             }, { passive: false });
 
             // ══════════════════════════════════════
@@ -785,38 +897,57 @@
             // ══════════════════════════════════════
 
             const tt = {
+                // Bola
                 ballX: CANVAS_W / 2,
-                ballY: CANVAS_H / 2,
-                ballZ: 40,
+                ballY: TT.TABLE_Y - 30,
                 ballVX: 0,
                 ballVY: 0,
-                ballVZ: 0,
+                ballTrail: [],
 
-                p1X: 100,
-                p1Y: CANVAS_H / 2,
-                p1VX: 0,
-                p1VY: 0,
-                p1PrevX: 100,
-                p1PrevY: CANVAS_H / 2,
-                p2X: CANVAS_W - 100,
-                p2Y: CANVAS_H / 2,
-                p2VX: 0,
-                p2VY: 0,
-                p2PrevX: CANVAS_W - 100,
-                p2PrevY: CANVAS_H / 2,
-
-                lastHitter: null,   // "p1" | "p2"
-                crossedNet: false,
-                bouncesOnOpponent: 0,
-
+                // Partida
                 score1: 0,
                 score2: 0,
+                totalPoints: 0,
                 gameOver: false,
                 winner: "",
 
+                // Fase: "serve" | "rally" | "point" | "gameover"
+                phase: "serve",
+                server: "p1",
+                serveTimer: TT.SERVE_DELAY,
+                serveTossed: false,
+                pointTimer: 0,
+                pointMessage: "",
+                pointMessageColor: "#bafff2",
+                lastPoint: null,
+
+                // Rally
                 rallyActive: false,
-                restTimer: 0,
-                hitCooldown: 0
+                lastHitter: null,
+                lastShot: null,
+                lastCharge: 0,
+                crossedNet: false,
+                bouncesOnSide: { p1: 0, p2: 0 },
+
+                // Carga local (quem está jogando neste navegador)
+                charging: false,
+                chargeShot: null,   // "forehand" | "lob"
+                charge: 0,
+                stamina: TT.STAMINA_MAX,
+                chargeSendTimer: 0,
+
+                // Carga do oponente (recebida pela rede)
+                oppCharging: false,
+                oppShot: null,
+                oppCharge: 0,
+                oppStamina: TT.STAMINA_MAX,
+
+                // Feedback visual
+                hitFlash: 0,
+                netFlash: 0,
+                feedback: "",
+                feedbackTimer: 0,
+                screenFlash: 0
             };
 
             // ══════════════════════════════════════
@@ -921,7 +1052,9 @@
                 currentMinigame = game;
 
                 minigameLabel.textContent = "Minigame: " +
-                    (game === "pong" ? "Pong" : "Tênis de Mesa");
+                    (game === "pong" ? "Pong" : "Tênis");
+
+                canvas.classList.toggle("crt-mode", game === "tableTennis");
 
                 updateInfoText();
                 updateScoreDisplay();
@@ -938,14 +1071,11 @@
                     state.countdown = 0;
                     resetBall();
                 } else {
-                    if (tt.score1 >= WINNING_SCORE || tt.score2 >= WINNING_SCORE) {
-                        tt.score1 = 0;
-                        tt.score2 = 0;
-                    }
-                    tt.gameOver = false;
-                    tt.winner = "";
-                    tt.hitCooldown = 0;
-                    resetTTBall();
+                    const matchOver =
+                        tt.gameOver ||
+                        tt.score1 >= WINNING_SCORE ||
+                        tt.score2 >= WINNING_SCORE;
+                    resetTTMatch(!matchOver);
                 }
 
                 if (notifyPeer && connection && connection.open) {
@@ -953,7 +1083,7 @@
                 }
 
                 addSystemMessage("Minigame alterado para: " +
-                    (game === "pong" ? "Pong" : "Tênis de Mesa"));
+                    (game === "pong" ? "Pong" : "Tênis"));
 
                 if (connected && isHost) {
                     if (game === "pong") {
@@ -969,7 +1099,7 @@
                     infoEl.textContent = "W / S ou ↑ / ↓ para mover a raquete";
                 } else {
                     infoEl.textContent =
-                        "Mova o mouse para controlar a raquete — a bola é rebatida ao tocar nela";
+                        "LMB = Forehand · RMB = Lob · segure para carregar e solte no seu lado";
                 }
             }
 
@@ -994,7 +1124,7 @@
                         if (currentMinigame === "pong") {
                             startCountdown();
                         } else {
-                            resetTTBall();
+                            resetTTMatch(true);
                             broadcastTTState();
                         }
                     }
@@ -1082,49 +1212,82 @@
                             }
                             break;
 
-                        // ── Tênis de Mesa: posição/velocidade da raquete do guest ──
-                        case "ttPaddle":
+                        // ── Tênis: golpe do guest (guest → host) ──
+                        case "ttShot":
                             if (isHost && currentMinigame === "tableTennis") {
-                                tt.p2PrevX = tt.p2X;
-                                tt.p2PrevY = tt.p2Y;
-                                tt.p2X = data.p2X;
-                                tt.p2Y = data.p2Y;
-                                tt.p2VX = data.p2VX || 0;
-                                tt.p2VY = data.p2VY || 0;
+                                applyTTShot(
+                                    "p2",
+                                    data.shot,
+                                    data.charge,
+                                    data.stamina,
+                                    !!data.spike
+                                );
                             }
                             break;
 
-                        // ── Tênis de Mesa: estado completo (host → guest) ──
+                        // ── Tênis: carga do guest (para exibir no host) ──
+                        case "ttCharge":
+                            if (isHost && currentMinigame === "tableTennis") {
+                                tt.oppCharging = !!data.charging;
+                                tt.oppShot = data.shot || null;
+                                tt.oppCharge = data.charge || 0;
+                                if (data.stamina != null) tt.oppStamina = data.stamina;
+                            }
+                            break;
+
+                        // ── Tênis: estado completo (host → guest) ──
                         case "ttState":
                             if (!isHost && currentMinigame === "tableTennis") {
+                                const prevHitter = tt.lastHitter;
+
                                 tt.ballX = data.ballX;
                                 tt.ballY = data.ballY;
-                                tt.ballZ = data.ballZ;
                                 tt.ballVX = data.ballVX;
                                 tt.ballVY = data.ballVY;
-                                tt.ballVZ = data.ballVZ;
-                                tt.p1X = data.p1X;
-                                tt.p1Y = data.p1Y;
-                                tt.p1VX = data.p1VX || 0;
-                                tt.p1VY = data.p1VY || 0;
-                                tt.score1 = data.score1;
-                                tt.score2 = data.score2;
-                                tt.gameOver = data.gameOver;
-                                tt.winner = data.winner || "";
-                                tt.rallyActive = data.rallyActive;
-                                tt.lastHitter = data.lastHitter;
-                                tt.crossedNet = data.crossedNet;
-                                tt.bouncesOnOpponent = data.bouncesOnOpponent;
-                                updateScoreDisplay();
-                            }
-                            break;
+                                tt.ballTrail = Array.isArray(data.trail) ? data.trail : tt.ballTrail;
 
-                        case "ttReset":
-                            if (!isHost && currentMinigame === "tableTennis") {
                                 tt.score1 = data.score1;
                                 tt.score2 = data.score2;
-                                tt.gameOver = data.gameOver;
+                                tt.totalPoints = data.totalPoints || 0;
+                                tt.gameOver = !!data.gameOver;
                                 tt.winner = data.winner || "";
+
+                                tt.phase = data.phase || "rally";
+                                tt.server = data.server || "p1";
+                                tt.serveTimer = data.serveTimer || 0;
+                                tt.serveTossed = !!data.serveTossed;
+                                tt.pointTimer = data.pointTimer || 0;
+                                tt.pointMessage = data.pointMessage || "";
+                                tt.pointMessageColor = data.pointMessageColor || "#bafff2";
+                                tt.lastPoint = data.lastPoint || null;
+
+                                tt.rallyActive = !!data.rallyActive;
+                                tt.lastHitter = data.lastHitter || null;
+                                tt.lastShot = data.lastShot || null;
+                                tt.lastCharge = data.lastCharge || 0;
+                                tt.crossedNet = !!data.crossedNet;
+                                tt.bouncesOnSide = data.bouncesOnSide || { p1: 0, p2: 0 };
+
+                                // O guest ouve o golpe do host
+                                if (prevHitter !== "p1" && tt.lastHitter === "p1") {
+                                    sfxTTHit(
+                                        tt.lastShot || "forehand",
+                                        tt.lastCharge || 0.5,
+                                        false
+                                    );
+                                }
+
+                                tt.oppCharging = !!data.p1Charging;
+                                tt.oppShot = data.p1Shot || null;
+                                tt.oppCharge = data.p1Charge || 0;
+                                if (data.p1Stamina != null) tt.oppStamina = data.p1Stamina;
+
+                                if (tt.phase === "point" || tt.phase === "gameover") {
+                                    tt.charging = false;
+                                    tt.chargeShot = null;
+                                    tt.charge = 0;
+                                }
+
                                 updateScoreDisplay();
                             }
                             break;
@@ -1262,10 +1425,10 @@
                         }
                     }
                 } else {
-                    handleTTPaddle();
+                    updateTTLocalState();
 
-                    if (isHost && connected && !tt.gameOver) {
-                        updateTTBall();
+                    if (isHost && connected) {
+                        updateTTMatch();
                     }
 
                     if (timestamp - lastBroadcast >= BROADCAST_INTERVAL) {
@@ -1496,290 +1659,422 @@
             });
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Reset da bola
+            //  TÊNIS — Reset, saque e estado local
             // ══════════════════════════════════════
 
-            function resetTTBall() {
-                tt.ballX = CANVAS_W / 2;
-                tt.ballY = CANVAS_H / 2;
-                tt.ballZ = 45;
-                tt.ballVX = (Math.random() > 0.5 ? 1 : -1) * 1.5;
-                tt.ballVY = (Math.random() - 0.5) * 1.5;
-                tt.ballVZ = 0;
+            function resetTTMatch(keepScore) {
+                if (!keepScore) {
+                    tt.score1 = 0;
+                    tt.score2 = 0;
+                    tt.totalPoints = 0;
+                    tt.server = "p1";
+                }
 
+                tt.gameOver = false;
+                tt.winner = "";
+                tt.stamina = TT.STAMINA_MAX;
+                tt.oppStamina = TT.STAMINA_MAX;
+                tt.oppCharging = false;
+                tt.oppShot = null;
+                tt.oppCharge = 0;
+                tt.hitFlash = 0;
+                tt.netFlash = 0;
+                tt.feedback = "";
+                tt.feedbackTimer = 0;
+                tt.screenFlash = 0;
+
+                startTTServe();
+                updateScoreDisplay();
+            }
+
+            function startTTServe() {
+                tt.phase = "serve";
+                tt.serveTimer = TT.SERVE_DELAY;
+                tt.serveTossed = false;
+                tt.pointTimer = 0;
+                tt.pointMessage = "";
+                tt.lastPoint = null;
+                tt.rallyActive = false;
                 tt.lastHitter = null;
                 tt.crossedNet = false;
-                tt.bouncesOnOpponent = 0;
+                tt.bouncesOnSide = { p1: 0, p2: 0 };
+                tt.ballTrail = [];
+                tt.ballX = tt.server === "p1" ? 250 : 550;
+                tt.ballY = TT.TABLE_Y - 30;
+                tt.ballVX = 0;
+                tt.ballVY = 0;
+                tt.charging = false;
+                tt.chargeShot = null;
+                tt.charge = 0;
+                tt.oppCharging = false;
+                tt.oppShot = null;
+                tt.oppCharge = 0;
+            }
 
+            function tossTTBall() {
+                tt.serveTossed = true;
+                tt.phase = "rally";
                 tt.rallyActive = true;
-                tt.restTimer = 0;
-                tt.hitCooldown = 0;
+                tt.lastHitter = null;
+                tt.crossedNet = false;
+                tt.bouncesOnSide = { p1: 0, p2: 0 };
+                tt.ballX = tt.server === "p1" ? 250 : 550;
+                tt.ballY = TT.TABLE_Y - 30;
+                tt.ballVX = 0;
+                tt.ballVY = -7.8;
+                tt.ballTrail = [];
+                sfxTTToss();
+            }
 
-                tt.p1VX = 0;
-                tt.p1VY = 0;
-                tt.p2VX = 0;
-                tt.p2VY = 0;
+            function updateTTLocalState() {
+                // Carga do golpe
+                if (tt.charging) {
+                    tt.charge = Math.min(1, tt.charge + TT.CHARGE_RATE);
 
-                tt.p1PrevX = tt.p1X;
-                tt.p1PrevY = tt.p1Y;
-                tt.p2PrevX = tt.p2X;
-                tt.p2PrevY = tt.p2Y;
+                    tt.chargeSendTimer--;
+                    if (tt.chargeSendTimer <= 0) {
+                        tt.chargeSendTimer = 6; // ~100ms
+                        sendTTCharge();
+                    }
+                } else {
+                    tt.chargeSendTimer = 0;
+                }
+
+                // Stamina regenera mais devagar enquanto carrega
+                tt.stamina = Math.min(
+                    TT.STAMINA_MAX,
+                    tt.stamina + (tt.charging
+                        ? TT.STAMINA_CHARGE_REGEN
+                        : TT.STAMINA_REGEN)
+                );
+
+                // Feedback visual
+                if (tt.hitFlash > 0) tt.hitFlash = Math.max(0, tt.hitFlash - 0.06);
+                if (tt.netFlash > 0) tt.netFlash = Math.max(0, tt.netFlash - 0.05);
+                if (tt.screenFlash > 0) tt.screenFlash = Math.max(0, tt.screenFlash - 0.04);
+                if (tt.feedbackTimer > 0) {
+                    tt.feedbackTimer--;
+                    if (tt.feedbackTimer <= 0) tt.feedback = "";
+                }
+            }
+
+            function setTTFeedback(text) {
+                tt.feedback = text;
+                tt.feedbackTimer = 36; // ~0,6s
+            }
+
+            function sendTTCharge() {
+                if (!connection || !connection.open) return;
+
+                connection.send({
+                    type: "ttCharge",
+                    charging: tt.charging,
+                    shot: tt.chargeShot,
+                    charge: tt.charge,
+                    stamina: tt.stamina
+                });
             }
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Mover a raquete
+            //  TÊNIS — Liberar golpe
             // ══════════════════════════════════════
 
-            function handleTTPaddle() {
-                if (!connected || currentMinigame !== "tableTennis") return;
-                if (!mouseActive) return;
+            function releaseTTShot(shot, charge) {
+                if (!connected || tt.gameOver) return;
+                if (tt.phase !== "rally") {
+                    setTTFeedback(tt.phase === "serve" ? "ESPERE O SAQUE" : "AGUARDE");
+                    return;
+                }
+
+                const player = isHost ? "p1" : "p2";
+
+                // A bola precisa estar no seu lado e abaixo da linha superior
+                const onMySide = player === "p1"
+                    ? tt.ballX <= TT.NET_X + 38
+                    : tt.ballX >= TT.NET_X - 38;
+
+                const lowEnough = tt.ballY >= TT.TOO_HIGH_Y - 8;
+
+                const alreadyHit = tt.lastHitter === player && !tt.crossedNet;
+
+                if (!onMySide) {
+                    setTTFeedback("LADO ERRADO");
+                    return;
+                }
+                if (!lowEnough) {
+                    setTTFeedback("MUITO ALTO");
+                    return;
+                }
+                if (alreadyHit) {
+                    setTTFeedback("JÁ BATEU");
+                    return;
+                }
+
+                // Custo de stamina
+                let cost = shot === "forehand"
+                    ? 12 + charge * 20
+                    : 8 + charge * 12;
+
+                const spike = shot === "forehand" &&
+                    charge > 0.5 &&
+                    tt.ballVY < 1.4;
+
+                if (spike) cost += 14;
+
+                if (tt.stamina < cost) {
+                    charge *= tt.stamina / Math.max(1, cost);
+                    tt.stamina = 0;
+                    setTTFeedback("SEM STAMINA");
+                } else {
+                    tt.stamina -= cost;
+                }
 
                 if (isHost) {
-                    tt.p1PrevX = tt.p1X;
-                    tt.p1PrevY = tt.p1Y;
-
-                    tt.p1X = clamp(mouseX, TT.MARGIN + TT.PADDLE_R, TT.NET_X - TT.PADDLE_R - 4);
-                    tt.p1Y = clamp(mouseY, TT.MARGIN + TT.PADDLE_R, CANVAS_H - TT.MARGIN - TT.PADDLE_R);
-
-                    tt.p1VX = tt.p1X - tt.p1PrevX;
-                    tt.p1VY = tt.p1Y - tt.p1PrevY;
-                } else {
-                    tt.p2PrevX = tt.p2X;
-                    tt.p2PrevY = tt.p2Y;
-
-                    tt.p2X = clamp(mouseX, TT.NET_X + TT.PADDLE_R + 4, CANVAS_W - TT.MARGIN - TT.PADDLE_R);
-                    tt.p2Y = clamp(mouseY, TT.MARGIN + TT.PADDLE_R, CANVAS_H - TT.MARGIN - TT.PADDLE_R);
-
-                    tt.p2VX = tt.p2X - tt.p2PrevX;
-                    tt.p2VY = tt.p2Y - tt.p2PrevY;
-
-                    if (connection && connection.open) {
-                        connection.send({
-                            type: "ttPaddle",
-                            p2X: tt.p2X,
-                            p2Y: tt.p2Y,
-                            p2VX: tt.p2VX,
-                            p2VY: tt.p2VY
-                        });
-                    }
+                    applyTTShot(player, shot, charge, tt.stamina, spike);
+                } else if (connection && connection.open) {
+                    connection.send({
+                        type: "ttShot",
+                        shot: shot,
+                        charge: charge,
+                        stamina: tt.stamina,
+                        spike: spike
+                    });
+                    sfxTTHit(shot, charge, spike);
                 }
             }
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Colisão da bola com a raquete
-            //  (executado no host, autoridade da física)
+            //  TÊNIS — Aplicar golpe (host)
             // ══════════════════════════════════════
 
-            function checkTTBallHit(player) {
-                if (tt.gameOver || !tt.rallyActive) return;
-                if (tt.hitCooldown > 0) return;
+            function applyTTShot(player, shot, charge, stamina, spike) {
+                if (tt.gameOver || tt.phase !== "rally") return;
 
-                const px = player === "p1" ? tt.p1X : tt.p2X;
-                const py = player === "p1" ? tt.p1Y : tt.p2Y;
-                const pvx = player === "p1" ? tt.p1VX : tt.p2VX;
-                const pvy = player === "p1" ? tt.p1VY : tt.p2VY;
+                if (shot !== "forehand" && shot !== "lob") shot = "forehand";
+                charge = Math.max(0, Math.min(1, Number(charge) || 0));
+                spike = !!spike;
 
-                const dx = tt.ballX - px;
-                const dy = tt.ballY - py;
-
-                const prevPX = player === "p1" ? tt.p1PrevX : tt.p2PrevX;
-                const prevPY = player === "p1" ? tt.p1PrevY : tt.p2PrevY;
-                const sweptDist = distToSegment(tt.ballX, tt.ballY, prevPX, prevPY, px, py);
-
-                // A bola não pode estar alta demais (acima da linha pontilhada)
-                if (tt.ballZ > TT.NET_HEIGHT) return;
-
-                // Só rebate se a bola tocar a raquete (inclui o trajeto do mouse)
-                if (sweptDist > TT.PADDLE_R + TT.BALL_R + 2) return;
-
-                // A bola precisa estar no lado do jogador
-                const onMySide =
-                    (player === "p1" && tt.ballX <= TT.NET_X) ||
-                    (player === "p2" && tt.ballX >= TT.NET_X);
-                if (!onMySide) return;
-
-                // Evita rebater a própria bola antes de ela cruzar a rede
+                // Evita dois toques do mesmo jogador sem a bola cruzar a rede
                 if (tt.lastHitter === player && !tt.crossedNet) return;
+
+                // Validação suave (tolera latência)
+                const onSide = player === "p1"
+                    ? tt.ballX <= TT.NET_X + 40
+                    : tt.ballX >= TT.NET_X - 40;
+                const lowEnough = tt.ballY >= TT.TOO_HIGH_Y - 12;
+
+                if (!onSide || !lowEnough) return;
 
                 const direction = player === "p1" ? 1 : -1;
 
-                // Ângulo baseado no ponto de impacto na raquete
-                const hitPos = clamp(dy / TT.PADDLE_R, -1, 1);
-                const angle = hitPos * (Math.PI / 4);
+                let vx, vy;
 
-                // Força base + velocidade do mouse na direção do golpe
-                const forwardSpeed = player === "p1" ? pvx : -pvx;
-                const power = clamp(6 + Math.max(0, forwardSpeed) * 0.7, 5, TT.MAX_SPEED);
-
-                tt.ballVX = direction * power * Math.cos(angle);
-                tt.ballVY = power * Math.sin(angle) + pvy * 0.25;
-
-                // Movimento do mouse para cima = lob (bola sobe)
-                const lift = Math.max(0, -pvy) * 0.8;
-                tt.ballVZ = 2.5 + lift;
-
-                tt.ballZ = Math.max(tt.ballZ, 1);
-                tt.lastHitter = player;
-                tt.crossedNet = false;
-                tt.bouncesOnOpponent = 0;
-                tt.hitCooldown = 10;
-
-                // Reposiciona a bola para fora da raquete, se estiver sobreposta
-                const curDist = Math.sqrt(dx * dx + dy * dy);
-                if (curDist < TT.PADDLE_R + TT.BALL_R + 1) {
-                    const nx = dx / (curDist || 1);
-                    const ny = dy / (curDist || 1);
-                    tt.ballX = px + nx * (TT.PADDLE_R + TT.BALL_R + 3);
-                    tt.ballY = py + ny * (TT.PADDLE_R + TT.BALL_R + 3);
+                if (shot === "forehand") {
+                    if (spike) {
+                        // Smash: rápido e descendente
+                        vx = 9.2 + charge * 6.6;
+                        vy = 1.2 + charge * 1.8;
+                    } else {
+                        vx = 4.5 + charge * 4.0;
+                        vy = -3.0 - charge * 2.2;
+                    }
+                } else {
+                    vx = 2.8 + charge * 2.8;
+                    vy = -7.5 - charge * 4.0;
                 }
 
-                if (lift > 3) sfxLob();
-                else sfxForehand();
+                tt.ballVX = direction * vx;
+                tt.ballVY = vy;
+
+                // Pequeno impulso para frente para descolar da posição atual
+                tt.ballX += direction * 2;
+
+                tt.lastHitter = player;
+                tt.lastShot = shot;
+                tt.lastCharge = charge;
+                tt.crossedNet = false;
+                tt.bouncesOnSide = { p1: 0, p2: 0 };
+                tt.ballTrail = [];
+                tt.hitFlash = 1;
+                tt.screenFlash = 0.35;
+
+                // Atualiza a stamina do jogador remoto no HUD
+                if (player === "p2" && stamina != null) {
+                    tt.oppStamina = stamina;
+                }
+
+                sfxTTHit(shot, charge, spike);
             }
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Física da bola (host)
+            //  TÊNIS — Fases da partida (host)
+            // ══════════════════════════════════════
+
+            function updateTTMatch() {
+                if (tt.phase === "serve") {
+                    tt.serveTimer--;
+                    if (tt.serveTimer <= 0 && !tt.serveTossed) {
+                        tossTTBall();
+                    }
+                    return;
+                }
+
+                if (tt.phase === "point") {
+                    tt.pointTimer--;
+                    if (tt.pointTimer <= 0) {
+                        if (tt.gameOver) {
+                            tt.phase = "gameover";
+                        } else {
+                            // Saque alterna a cada 2 pontos
+                            tt.server = Math.floor(tt.totalPoints / 2) % 2 === 0
+                                ? "p1"
+                                : "p2";
+                            startTTServe();
+                        }
+                    }
+                    return;
+                }
+
+                if (tt.phase !== "rally") return;
+
+                updateTTBall();
+            }
+
+            // ══════════════════════════════════════
+            //  TÊNIS — Física e regras da bola (host)
             // ══════════════════════════════════════
 
             function updateTTBall() {
-                if (tt.gameOver || !tt.rallyActive) return;
+                if (!tt.rallyActive) return;
 
-                if (tt.hitCooldown > 0) tt.hitCooldown--;
+                const prevX = tt.ballX;
 
-                const left = TT.MARGIN;
-                const right = CANVAS_W - TT.MARGIN;
-                const top = TT.MARGIN;
-                const bottom = CANVAS_H - TT.MARGIN;
-
-                // Gravidade na altura
-                tt.ballVZ -= TT.GRAVITY;
-
+                // Gravidade e movimento
+                tt.ballVY += TT.GRAVITY;
                 tt.ballX += tt.ballVX;
                 tt.ballY += tt.ballVY;
-                tt.ballZ += tt.ballVZ;
 
-                // Cruzou a rede?
+                // Colisão com a rede (só na primeira travessia após um golpe)
                 if (!tt.crossedNet && tt.lastHitter) {
-                    if (
-                        (tt.lastHitter === "p1" && tt.ballX > TT.NET_X) ||
-                        (tt.lastHitter === "p2" && tt.ballX < TT.NET_X)
-                    ) {
-                        // A bola precisa passar por cima da rede
-                        if (tt.ballZ < 4) {
-                            scoreTT(tt.lastHitter === "p1" ? "p2" : "p1");
+                    const crossed =
+                        (prevX < TT.NET_X && tt.ballX >= TT.NET_X) ||
+                        (prevX > TT.NET_X && tt.ballX <= TT.NET_X);
+
+                    if (crossed) {
+                        if (tt.ballY + TT.BALL_R > TT.NET_TOP) {
+                            // Bateu na rede
+                            tt.netFlash = 1;
+                            tt.ballX = TT.NET_X;
+                            tt.ballVX *= -0.2;
+                            tt.ballVY = Math.abs(tt.ballVY) * 0.3;
+                            sfxTTNet();
+                            awardTT(
+                                tt.lastHitter === "p1" ? "p2" : "p1",
+                                "NA REDE"
+                            );
                             return;
                         }
                         tt.crossedNet = true;
                     }
                 }
 
-                // Quique na superfície
-                if (tt.ballZ <= 0) {
-                    tt.ballZ = 0;
+                // Quique na mesa
+                if (tt.ballY + TT.BALL_R >= TT.TABLE_Y && tt.ballVY > 0) {
+                    tt.ballY = TT.TABLE_Y - TT.BALL_R;
+                    tt.ballVY = -tt.ballVY * TT.BOUNCE;
+                    tt.ballVX *= 0.985;
+                    sfxTTBounce();
 
-                    if (tt.ballVZ < -1.2) {
-                        tt.ballVZ = -tt.ballVZ * TT.ELASTICITY;
-                        tt.ballVX *= TT.FRICTION;
-                        tt.ballVY *= TT.FRICTION;
-                        sfxTableBounce();
+                    const side = tt.ballX < TT.NET_X ? "p1" : "p2";
+                    tt.bouncesOnSide[side]++;
 
-                        const side = tt.ballX < TT.NET_X ? "p1" : "p2";
-
-                        if (tt.lastHitter && tt.crossedNet) {
-                            if (side === tt.lastHitter) {
-                                // voltou para o lado de quem bateu → falta
-                                scoreTT(side === "p1" ? "p2" : "p1");
-                                return;
-                            } else {
-                                tt.bouncesOnOpponent++;
-                                if (tt.bouncesOnOpponent >= 2) {
-                                    scoreTT(tt.lastHitter);
-                                    return;
-                                }
-                            }
-                        }
-                    } else {
-                        // bola praticamente parada na mesa
-                        tt.ballVZ = 0;
-                        tt.ballVX *= 0.95;
-                        tt.ballVY *= 0.95;
-                        tt.restTimer++;
-
-                        if (tt.restTimer > 180) {
-                            // parada por ~3s: ponto para o lado oposto
-                            const side = tt.ballX < TT.NET_X ? "p1" : "p2";
-                            scoreTT(side === "p1" ? "p2" : "p1");
-                            return;
-                        }
+                    if (tt.bouncesOnSide[side] >= 2) {
+                        awardTT(
+                            side === "p1" ? "p2" : "p1",
+                            "QUIQUE DUPLO"
+                        );
+                        return;
                     }
-                } else {
-                    tt.restTimer = 0;
+
+                    // Se a bola quicou no lado de quem bateu, é falta
+                    if (tt.lastHitter && side === tt.lastHitter) {
+                        awardTT(
+                            tt.lastHitter === "p1" ? "p2" : "p1",
+                            "FORA"
+                        );
+                        return;
+                    }
                 }
 
-                // Rebote nas laterais da mesa (topo/baixo) — a bola não sai para os lados
-                if (tt.ballY - TT.BALL_R <= top) {
-                    tt.ballY = top + TT.BALL_R;
-                    tt.ballVY = Math.abs(tt.ballVY);
-                    sfxTableBounce();
-                }
-                if (tt.ballY + TT.BALL_R >= bottom) {
-                    tt.ballY = bottom - TT.BALL_R;
-                    tt.ballVY = -Math.abs(tt.ballVY);
-                    sfxTableBounce();
-                }
+                // Fora da quadra
+                if (tt.ballX < TT.LEFT || tt.ballX > TT.RIGHT) {
+                    const outSide = tt.ballX < TT.NET_X ? "p1" : "p2";
 
-                // Fora dos limites da mesa (apenas nas laterais dos jogadores: esquerda/direita)
-                if (tt.ballX < left || tt.ballX > right) {
                     if (tt.lastHitter) {
-                        if (tt.crossedNet && tt.bouncesOnOpponent > 0) {
-                            scoreTT(tt.lastHitter);
+                        if (outSide === tt.lastHitter) {
+                            awardTT(
+                                tt.lastHitter === "p1" ? "p2" : "p1",
+                                "FORA"
+                            );
+                        } else if (tt.crossedNet && tt.bouncesOnSide[outSide] >= 1) {
+                            awardTT(tt.lastHitter, "PONTO");
                         } else {
-                            scoreTT(tt.lastHitter === "p1" ? "p2" : "p1");
+                            awardTT(
+                                tt.lastHitter === "p1" ? "p2" : "p1",
+                                "FORA"
+                            );
                         }
                     } else {
-                        resetTTBall();
+                        awardTT(outSide === "p1" ? "p2" : "p1", "FORA");
                     }
                     return;
                 }
 
-                // Colisão com as raquetes (só se a bola estiver baixa o suficiente)
-                if (tt.ballZ <= TT.NET_HEIGHT) {
-                    if (tt.hitCooldown <= 0) {
-                        checkTTBallHit("p1");
-                        checkTTBallHit("p2");
-                    }
-                }
+                // Rastro da bola
+                tt.ballTrail.push({ x: tt.ballX, y: tt.ballY });
+                if (tt.ballTrail.length > 10) tt.ballTrail.shift();
             }
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Placar
+            //  TÊNIS — Pontuação
             // ══════════════════════════════════════
 
-            function scoreTT(winner) {
-                if (currentMinigame !== "tableTennis" || tt.gameOver) return;
+            function awardTT(winner, reason) {
+                if (tt.gameOver) return;
+                if (tt.phase === "point" || tt.phase === "gameover") return;
 
                 if (winner === "p1") tt.score1++;
                 else tt.score2++;
 
+                tt.totalPoints++;
+                tt.lastPoint = winner;
+                tt.phase = "point";
+                tt.pointTimer = TT.POINT_DELAY;
+                tt.pointMessage = reason || "PONTO";
+                tt.pointMessageColor = winner === "p1" ? "#39ff88" : "#ff4d5a";
+                tt.rallyActive = false;
+                tt.charging = false;
+                tt.chargeShot = null;
+                tt.charge = 0;
+                tt.hitFlash = 1;
+                tt.screenFlash = 0.7;
+
                 updateScoreDisplay();
-                sfxGoal();
+                sfxTTScore();
 
                 if (tt.score1 >= WINNING_SCORE || tt.score2 >= WINNING_SCORE) {
                     tt.gameOver = true;
-                    tt.rallyActive = false;
                     tt.winner = tt.score1 >= WINNING_SCORE
                         ? (isHost ? myName : otherName)
                         : (isHost ? otherName : myName);
                     sfxWin();
-                } else {
-                    resetTTBall();
                 }
 
                 broadcastTTState();
             }
 
             // ══════════════════════════════════════
-            //  TÊNIS DE MESA — Broadcast (host → guest)
+            //  TÊNIS — Broadcast (host → guest)
             // ══════════════════════════════════════
 
             function broadcastTTState() {
@@ -1788,22 +2083,36 @@
                         type: "ttState",
                         ballX: tt.ballX,
                         ballY: tt.ballY,
-                        ballZ: tt.ballZ,
                         ballVX: tt.ballVX,
                         ballVY: tt.ballVY,
-                        ballVZ: tt.ballVZ,
-                        p1X: tt.p1X,
-                        p1Y: tt.p1Y,
-                        p1VX: tt.p1VX,
-                        p1VY: tt.p1VY,
+                        trail: tt.ballTrail.slice(-10),
+
                         score1: tt.score1,
                         score2: tt.score2,
+                        totalPoints: tt.totalPoints,
                         gameOver: tt.gameOver,
                         winner: tt.winner,
+
+                        phase: tt.phase,
+                        server: tt.server,
+                        serveTimer: tt.serveTimer,
+                        serveTossed: tt.serveTossed,
+                        pointTimer: tt.pointTimer,
+                        pointMessage: tt.pointMessage,
+                        pointMessageColor: tt.pointMessageColor,
+                        lastPoint: tt.lastPoint,
+
                         rallyActive: tt.rallyActive,
                         lastHitter: tt.lastHitter,
+                        lastShot: tt.lastShot,
+                        lastCharge: tt.lastCharge,
                         crossedNet: tt.crossedNet,
-                        bouncesOnOpponent: tt.bouncesOnOpponent
+                        bouncesOnSide: tt.bouncesOnSide,
+
+                        p1Charging: tt.charging,
+                        p1Shot: tt.chargeShot,
+                        p1Charge: tt.charge,
+                        p1Stamina: tt.stamina
                     });
                 }
             }
@@ -1928,137 +2237,670 @@
             // ══════════════════════════════════════
 
             function renderTableTennis() {
-                // Fundo
-                ctx.fillStyle = "#0a0f0a";
+                const now = performance.now();
+                const SX = 38;
+                const SY = 16;
+                const SW = CANVAS_W - 76;
+                const SH = CANVAS_H - 32;
+
+                // ── Fundo da sala ──
+                ctx.fillStyle = "#050807";
                 ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-                // Mesa
-                const left = TT.MARGIN;
-                const top = TT.MARGIN;
-                const w = CANVAS_W - TT.MARGIN * 2;
-                const h = CANVAS_H - TT.MARGIN * 2;
+                const room = ctx.createRadialGradient(400, 240, 40, 400, 250, 520);
+                room.addColorStop(0, "#101917");
+                room.addColorStop(1, "#020303");
+                ctx.fillStyle = room;
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-                ctx.fillStyle = "#123524";
-                ctx.fillRect(left, top, w, h);
+                // Cabos
+                ctx.strokeStyle = "#0a0f0e";
+                ctx.lineWidth = 7;
+                ctx.beginPath();
+                ctx.moveTo(52, CANVAS_H - 8);
+                ctx.bezierCurveTo(24, CANVAS_H + 8, 14, CANVAS_H - 2, 0, CANVAS_H);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(CANVAS_W - 52, CANVAS_H - 8);
+                ctx.bezierCurveTo(CANVAS_W - 24, CANVAS_H + 8, CANVAS_W - 14, CANVAS_H - 2, CANVAS_W, CANVAS_H);
+                ctx.stroke();
 
-                ctx.strokeStyle = "rgba(0, 229, 255, 0.45)";
-                ctx.lineWidth = 2;
-                ctx.strokeRect(left, top, w, h);
+                // ── Moldura do CRT ──
+                roundRectPath(16, 6, CANVAS_W - 32, CANVAS_H - 12, 36);
+                ctx.fillStyle = "#161b1a";
+                ctx.fill();
+                ctx.strokeStyle = "#2b3532";
+                ctx.lineWidth = 5;
+                ctx.stroke();
 
-                // Rede (linha pontilhada central)
-                ctx.setLineDash([8, 8]);
-                ctx.strokeStyle = "rgba(255,255,255,0.55)";
+                roundRectPath(SX - 8, SY - 8, SW + 16, SH + 16, 30);
+                ctx.fillStyle = "#0a0f0e";
+                ctx.fill();
+                ctx.strokeStyle = "#0a2c2a";
+                ctx.lineWidth = 10;
+                ctx.stroke();
+
+                // ── Tela ──
+                ctx.save();
+                roundRectPath(SX, SY, SW, SH, 26);
+                ctx.clip();
+
+                const screen = ctx.createRadialGradient(400, 235, 30, 400, 245, 440);
+                screen.addColorStop(0, "#073432");
+                screen.addColorStop(0.52, "#031e1f");
+                screen.addColorStop(1, "#010b0c");
+                ctx.fillStyle = screen;
+                ctx.fillRect(SX, SY, SW, SH);
+
+                // Grade/phosphor
+                ctx.strokeStyle = "rgba(57,255,136,0.025)";
+                ctx.lineWidth = 1;
+                for (let x = SX; x < SX + SW; x += 24) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, SY);
+                    ctx.lineTo(x, SY + SH);
+                    ctx.stroke();
+                }
+                for (let y = SY; y < SY + SH; y += 24) {
+                    ctx.beginPath();
+                    ctx.moveTo(SX, y);
+                    ctx.lineTo(SX + SW, y);
+                    ctx.stroke();
+                }
+
+                drawTTCourt(now);
+                drawTTBall(now);
+                drawTTHud(now);
+                drawTTOverlays(now);
+                drawTTScanlines(now);
+
+                ctx.restore();
+
+                // ── Detalhes da moldura ──
+                drawTTBezelDetails(now);
+            }
+
+            // ── Quadra em perspectiva ──
+            function drawTTCourt(now) {
+                const left = TT.LEFT;
+                const right = TT.RIGHT;
+                const tableY = TT.TABLE_Y;
+                const netX = TT.NET_X;
+                const netTop = TT.NET_TOP;
+                const tooHigh = TT.TOO_HIGH_Y;
+
+                const localSide = isHost ? "p1" : "p2";
+                const ballSide = tt.ballX < netX ? "p1" : "p2";
+                const hittable = tt.phase === "rally" &&
+                    ballSide === localSide &&
+                    tt.ballY >= tooHigh &&
+                    !(tt.lastHitter === localSide && !tt.crossedNet);
+
+                const leftZone = [
+                    [left, 194],
+                    [netX - 14, 238],
+                    [netX - 14, tableY],
+                    [left, tableY]
+                ];
+                const rightZone = [
+                    [netX + 14, 238],
+                    [right, 194],
+                    [right, tableY],
+                    [netX + 14, tableY]
+                ];
+
+                const serveP1 = tt.phase === "serve" && tt.server === "p1";
+                const serveP2 = tt.phase === "serve" && tt.server === "p2";
+
+                const p1Glow = (localSide === "p1" && hittable) || serveP1 ? 0.10 : 0.055;
+                const p2Glow = (localSide === "p2" && hittable) || serveP2 ? 0.10 : 0.055;
+
+                fillZone(leftZone, `rgba(57,255,136,${p1Glow})`);
+                fillZone(rightZone, `rgba(255,77,90,${p2Glow})`);
+
+                const p1Active = (ballSide === "p1" && tt.phase === "rally") || serveP1;
+                const p2Active = (ballSide === "p2" && tt.phase === "rally") || serveP2;
+
+                const p1Pulse = 0.50 + (p1Active ? 0.12 * Math.sin(now / 160) : 0);
+                const p2Pulse = 0.50 + (p2Active ? 0.12 * Math.sin(now / 160) : 0);
+
+                strokeZone(leftZone, "#39ff88", p1Active ? 0.95 : p1Pulse, p1Active ? 3 : 2, p1Active ? 16 : 8);
+                strokeZone(rightZone, "#ff4d5a", p2Active ? 0.95 : p2Pulse, p2Active ? 3 : 2, p2Active ? 16 : 8);
+
+                // Linha da mesa
+                ctx.save();
+                ctx.strokeStyle = "rgba(186,255,242,0.78)";
+                ctx.shadowColor = "#7dffe0";
+                ctx.shadowBlur = 10;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(TT.NET_X, top);
-                ctx.lineTo(TT.NET_X, top + h);
+                ctx.moveTo(left, tableY);
+                ctx.lineTo(right, tableY);
                 ctx.stroke();
-                ctx.setLineDash([]);
+                ctx.restore();
 
-                // Placar grande no fundo
-                ctx.fillStyle = "rgba(255,255,255,0.05)";
-                ctx.font = "bold 130px 'Segoe UI', Arial";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(tt.score1, CANVAS_W / 4, CANVAS_H / 2);
-                ctx.fillText(tt.score2, (CANVAS_W / 4) * 3, CANVAS_H / 2);
-
-                // Nomes no topo
-                ctx.font = "bold 14px 'Segoe UI', Arial";
-                ctx.fillStyle = "rgba(0, 229, 255, 0.6)";
-                ctx.fillText(name1El.textContent, CANVAS_W / 4, 26);
-                ctx.fillStyle = "rgba(255, 23, 68, 0.6)";
-                ctx.fillText(name2El.textContent, (CANVAS_W / 4) * 3, 26);
-
-                // Raquetes
-                drawTTPaddle(tt.p1X, tt.p1Y, "#00e5ff");
-                drawTTPaddle(tt.p2X, tt.p2Y, "#ff1744");
-
-                // Bola com sombra (altura)
-                if (tt.rallyActive) {
-                    // Sombra
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+                // Linhas frontais decorativas
+                ctx.strokeStyle = "rgba(186,255,242,0.12)";
+                ctx.lineWidth = 1;
+                for (const y of [tableY + 16, tableY + 32]) {
                     ctx.beginPath();
-                    ctx.ellipse(tt.ballX, tt.ballY, TT.BALL_R + 2, (TT.BALL_R + 2) * 0.6, 0, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Bola elevada
-                    const drawY = tt.ballY - tt.ballZ;
-                    const high = tt.ballZ > TT.NET_HEIGHT;
-
-                    ctx.fillStyle = high ? "rgba(255,255,255,0.35)" : "#ffffff";
-                    ctx.shadowColor = high ? "rgba(255,255,255,0.2)" : "#ffffff";
-                    ctx.shadowBlur = high ? 6 : 14;
+                    ctx.moveTo(left, y);
+                    ctx.lineTo(right, y);
+                    ctx.stroke();
+                }
+                for (let x = left; x <= right; x += 40) {
                     ctx.beginPath();
-                    ctx.arc(tt.ballX, drawY, TT.BALL_R, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
+                    ctx.moveTo(x, tableY + 16);
+                    ctx.lineTo(x, tableY + 21);
+                    ctx.stroke();
+                }
 
-                    // Linha vertical indicando altura
-                    if (tt.ballZ > 4) {
-                        ctx.strokeStyle = "rgba(255,255,255,0.15)";
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.moveTo(tt.ballX, tt.ballY);
-                        ctx.lineTo(tt.ballX, drawY);
-                        ctx.stroke();
+                // Linha pontilhada "muito alto"
+                ctx.save();
+                ctx.setLineDash([6, 8]);
+                ctx.strokeStyle = "rgba(186,255,242,0.30)";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(left, tooHigh);
+                ctx.lineTo(right, tooHigh);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.fillStyle = "rgba(186,255,242,0.32)";
+                ctx.font = "9px 'Courier New', monospace";
+                ctx.textAlign = "right";
+                ctx.textBaseline = "bottom";
+                ctx.fillText("TOO HIGH", right, tooHigh - 4);
+
+                // Rede
+                ctx.save();
+                ctx.strokeStyle = tt.netFlash > 0
+                    ? "#ff4d5a"
+                    : "rgba(234,255,251,0.9)";
+                ctx.shadowColor = tt.netFlash > 0 ? "#ff4d5a" : "#bafff2";
+                ctx.shadowBlur = tt.netFlash > 0 ? 26 : 12;
+                ctx.lineWidth = tt.netFlash > 0 ? 4 : 2.5;
+                ctx.beginPath();
+                ctx.moveTo(netX, netTop);
+                ctx.lineTo(netX, tableY + 2);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(netX - 9, netTop);
+                ctx.lineTo(netX + 9, netTop);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(netX - 11, tableY + 2);
+                ctx.lineTo(netX + 11, tableY + 2);
+                ctx.stroke();
+                ctx.restore();
+
+                // Malha da rede
+                ctx.fillStyle = "rgba(186,255,242,0.16)";
+                for (let y = netTop + 6; y < tableY; y += 6) {
+                    for (let x = netX - 6; x <= netX + 6; x += 4) {
+                        ctx.fillRect(x, y, 1, 1);
                     }
                 }
+            }
 
-                // Aviso de bola alta (sem interação)
-                if (tt.rallyActive && tt.ballZ > TT.NET_HEIGHT) {
-                    ctx.fillStyle = "rgba(255, 234, 0, 0.8)";
-                    ctx.font = "bold 16px 'Segoe UI', Arial";
+            function fillZone(points, color) {
+                ctx.beginPath();
+                ctx.moveTo(points[0][0], points[0][1]);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i][0], points[i][1]);
+                }
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+            }
+
+            function strokeZone(points, color, alpha, width, blur) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(points[0][0], points[0][1]);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i][0], points[i][1]);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = color;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth = width;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = blur;
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // ── Bola ──
+            function drawTTBall(now) {
+                if (tt.phase === "gameover") return;
+
+                if (tt.phase === "serve" && !tt.serveTossed) {
+                    const bob = Math.sin(now / 260) * 2;
+                    drawTTBallShadow();
+                    drawBallAt(tt.ballX, tt.ballY + bob, 0.38);
+                    ctx.fillStyle = "rgba(186,255,242,0.42)";
+                    ctx.font = "9px 'Courier New', monospace";
                     ctx.textAlign = "center";
-                    ctx.fillText("Bola alta — sem interação", CANVAS_W / 2, 44);
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText("SAQUE", tt.ballX, tt.ballY - 18);
+                    return;
                 }
 
-                if (!connected) {
-                    ctx.fillStyle = "rgba(0,0,0,0.55)";
-                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-                    ctx.fillStyle = "rgba(255,255,255,0.6)";
-                    ctx.font = "24px 'Segoe UI', Arial";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText("Aguardando conexão...", CANVAS_W / 2, CANVAS_H / 2);
+                drawTTBallShadow();
+
+                for (let i = 0; i < tt.ballTrail.length; i++) {
+                    const p = tt.ballTrail[i];
+                    const a = ((i + 1) / tt.ballTrail.length) * 0.20;
+                    ctx.fillStyle = `rgba(186,255,242,${a})`;
+                    ctx.beginPath();
+                    ctx.arc(
+                        p.x,
+                        p.y,
+                        TT.BALL_R * (0.3 + (i / tt.ballTrail.length) * 0.7),
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
                 }
 
-                if (tt.gameOver) {
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                const tooHigh = tt.ballY < TT.TOO_HIGH_Y;
+                drawBallAt(tt.ballX, tt.ballY, tooHigh ? 0.45 : 1);
 
-                    ctx.fillStyle = "#ffea00";
-                    ctx.font = "bold 46px 'Segoe UI', Arial";
+                if (tooHigh) {
+                    ctx.fillStyle = "rgba(255,225,77,0.8)";
+                    ctx.font = "10px 'Courier New', monospace";
                     ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.shadowColor = "#ffea00";
-                    ctx.shadowBlur = 20;
-                    ctx.fillText("🏆 " + tt.winner + " venceu!", CANVAS_W / 2, CANVAS_H / 2 - 20);
-                    ctx.shadowBlur = 0;
-
-                    ctx.fillStyle = "rgba(255,255,255,0.6)";
-                    ctx.font = "18px 'Segoe UI', Arial";
+                    ctx.textBaseline = "bottom";
                     ctx.fillText(
-                        isHost ? "Pressione ENTER para jogar novamente" : "Aguardando host reiniciar...",
-                        CANVAS_W / 2,
-                        CANVAS_H / 2 + 30
+                        "TOO HIGH",
+                        tt.ballX,
+                        Math.max(32, tt.ballY - 14)
                     );
                 }
             }
 
-            function drawTTPaddle(x, y, color) {
-                ctx.shadowColor = color;
-                ctx.shadowBlur = 14;
-                ctx.fillStyle = color;
+            function drawBallAt(x, y, alpha) {
+                const r = TT.BALL_R;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.shadowColor = "#d8fff6";
+                ctx.shadowBlur = 20;
+                ctx.fillStyle = "#eafffb";
                 ctx.beginPath();
-                ctx.arc(x, y, TT.PADDLE_R, 0, Math.PI * 2);
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "rgba(255,255,255,0.9)";
+                ctx.beginPath();
+                ctx.arc(x - 1.5, y - 1.5, r * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            function drawTTBallShadow() {
+                const t = clamp(
+                    (tt.ballY - TT.TOO_HIGH_Y) / (TT.TABLE_Y - TT.TOO_HIGH_Y),
+                    0,
+                    1
+                );
+
+                ctx.fillStyle = `rgba(0,0,0,${0.08 + t * 0.20})`;
+                ctx.beginPath();
+                ctx.ellipse(
+                    tt.ballX,
+                    TT.TABLE_Y - 3,
+                    12,
+                    4,
+                    0,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+            }
+
+            // ── HUD ──
+            function drawTTHud(now) {
+                const left = TT.LEFT;
+                const right = TT.RIGHT;
+
+                // Painel de nomes/placar
+                ctx.fillStyle = "rgba(0,0,0,0.45)";
+                ctx.fillRect(70, 52, 200, 54);
+                ctx.strokeStyle = "rgba(186,255,242,0.18)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(70, 52, 200, 54);
+
+                const p1Name = isHost ? myName : otherName;
+                const p2Name = isHost ? otherName : myName;
+
+                ctx.font = "bold 12px 'Courier New', monospace";
+                ctx.textBaseline = "middle";
+
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#39ff88";
+                ctx.fillText(p1Name.toUpperCase().slice(0, 14), 80, 70);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#eafffb";
+                ctx.fillText(tt.score1, 258, 70);
+
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#ff4d5a";
+                ctx.fillText(p2Name.toUpperCase().slice(0, 14), 80, 94);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#eafffb";
+                ctx.fillText(tt.score2, 258, 94);
+
+                // Placar grande
+                const pad = n => String(n).padStart(2, "0");
+                ctx.save();
+                ctx.font = "bold 38px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = "#eafffb";
+                ctx.shadowColor = "#7dffe0";
+                ctx.shadowBlur = 18;
+                ctx.fillText(`${pad(tt.score1)} - ${pad(tt.score2)}`, CANVAS_W / 2, 80);
+                ctx.restore();
+
+                if (tt.phase === "serve" && connected) {
+                    const serverName = tt.server === "p1" ? p1Name : p2Name;
+                    ctx.fillStyle = "rgba(186,255,242,0.6)";
+                    ctx.font = "11px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "top";
+                    ctx.fillText(
+                        "SAQUE: " + serverName.toUpperCase(),
+                        CANVAS_W / 2,
+                        106
+                    );
+                }
+
+                // Stamina local
+                const stW = 170;
+                const stH = 7;
+                const stX = left;
+                const stY = 438;
+                ctx.fillStyle = "rgba(186,255,242,0.12)";
+                ctx.fillRect(stX, stY, stW, stH);
+
+                const stPct = tt.stamina / TT.STAMINA_MAX;
+                const stColor = stPct > 0.5
+                    ? "#39ff88"
+                    : stPct > 0.25
+                        ? "#ffe14d"
+                        : "#ff4d5a";
+
+                ctx.fillStyle = stColor;
+                ctx.shadowColor = stColor;
+                ctx.shadowBlur = 8;
+                ctx.fillRect(stX, stY, stW * stPct, stH);
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = "rgba(186,255,242,0.55)";
+                ctx.font = "9px 'Courier New', monospace";
+                ctx.textAlign = "left";
+                ctx.textBaseline = "bottom";
+                ctx.fillText("STAMINA", stX, stY - 4);
+
+                // Carga local
+                if (tt.charging) {
+                    const cw = 230;
+                    const ch = 9;
+                    const cx = (CANVAS_W - cw) / 2;
+                    const cy = 438;
+
+                    ctx.fillStyle = "rgba(186,255,242,0.12)";
+                    ctx.fillRect(cx, cy, cw, ch);
+
+                    const grad = ctx.createLinearGradient(cx, 0, cx + cw, 0);
+                    grad.addColorStop(0, "#39ff88");
+                    grad.addColorStop(0.65, "#ffe14d");
+                    grad.addColorStop(1, "#ff4d5a");
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(cx, cy, cw * tt.charge, ch);
+
+                    ctx.strokeStyle = "rgba(234,255,251,0.45)";
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(cx, cy, cw, ch);
+
+                    const label = tt.chargeShot === "forehand" ? "FOREHAND" : "LOB";
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 11px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText(
+                        label + "  " + Math.round(tt.charge * 100) + "%",
+                        CANVAS_W / 2,
+                        cy - 5
+                    );
+
+                    const ballSide = tt.ballX < TT.NET_X ? "p1" : "p2";
+                    const localSide = isHost ? "p1" : "p2";
+                    const spikeReady =
+                        tt.chargeShot === "forehand" &&
+                        tt.charge > 0.5 &&
+                        tt.ballVY < 1.4 &&
+                        ballSide === localSide &&
+                        tt.ballY >= TT.TOO_HIGH_Y;
+
+                    if (spikeReady) {
+                        ctx.fillStyle = "#ffe14d";
+                        ctx.font = "bold 10px 'Courier New', monospace";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText("SPIKE!", CANVAS_W / 2, 416);
+                    }
+                }
+
+                // Carga do oponente
+                if (tt.oppCharging && (tt.phase === "rally" || tt.phase === "serve")) {
+                    const ow = 110;
+                    const oh = 5;
+                    const ox = isHost ? right - ow : left;
+                    const oy = 416;
+                    const shotName = tt.oppShot === "forehand" ? "FOREHAND" : "LOB";
+
+                    ctx.fillStyle = "rgba(186,255,242,0.10)";
+                    ctx.fillRect(ox, oy, ow, oh);
+                    ctx.fillStyle = isHost ? "#ff4d5a" : "#39ff88";
+                    ctx.fillRect(ox, oy, ow * tt.oppCharge, oh);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.45)";
+                    ctx.font = "9px 'Courier New', monospace";
+                    ctx.textAlign = isHost ? "right" : "left";
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText(
+                        "OPONENTE " + shotName,
+                        isHost ? right : left,
+                        oy - 4
+                    );
+                }
+
+                // Instruções
+                ctx.fillStyle = "rgba(234,255,251,0.75)";
+                ctx.font = "bold 12px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(
+                    "FOREHAND [LMB]   /   [RMB] LOB",
+                    CANVAS_W / 2,
+                    458
+                );
+                ctx.fillStyle = "rgba(186,255,242,0.45)";
+                ctx.font = "10px 'Courier New', monospace";
+                ctx.fillText("HOLD TO CHARGE", CANVAS_W / 2, 473);
+
+                // Feedback
+                if (tt.feedback) {
+                    ctx.fillStyle = "rgba(255,225,77,0.85)";
+                    ctx.font = "bold 13px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(tt.feedback, CANVAS_W / 2, 402);
+                }
+            }
+
+            // ── Overlays ──
+            function drawTTOverlays(now) {
+                if (tt.screenFlash > 0) {
+                    ctx.fillStyle = `rgba(186,255,242,${tt.screenFlash * 0.10})`;
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                }
+
+                if (!connected) {
+                    ctx.fillStyle = "rgba(0,8,8,0.62)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 26px 'Courier New', monospace";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.shadowColor = "#7dffe0";
+                    ctx.shadowBlur = 18;
+                    ctx.fillText("WAITING FOR PLAYER", CANVAS_W / 2, CANVAS_H / 2 - 10);
+                    ctx.shadowBlur = 0;
+
+                    const blink = Math.sin(now / 300) > 0 ? "_" : " ";
+                    ctx.fillStyle = "rgba(186,255,242,0.7)";
+                    ctx.font = "14px 'Courier New', monospace";
+                    ctx.fillText(
+                        "AGUARDANDO CONEXÃO " + blink,
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 30
+                    );
+                    return;
+                }
+
+                if (tt.phase === "point") {
+                    ctx.fillStyle = "rgba(0,8,8,0.35)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillStyle = tt.pointMessageColor;
+                    ctx.font = "bold 34px 'Courier New', monospace";
+                    ctx.shadowColor = tt.pointMessageColor;
+                    ctx.shadowBlur = 20;
+                    ctx.fillText(tt.pointMessage, CANVAS_W / 2, CANVAS_H / 2 - 20);
+                    ctx.shadowBlur = 0;
+
+                    const winnerName = tt.lastPoint === "p1"
+                        ? (isHost ? myName : otherName)
+                        : (isHost ? otherName : myName);
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "14px 'Courier New', monospace";
+                    ctx.fillText(
+                        "PONTO DE " + winnerName.toUpperCase(),
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 22
+                    );
+                }
+
+                if (tt.phase === "gameover") {
+                    ctx.fillStyle = "rgba(0,8,8,0.78)";
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+
+                    ctx.fillStyle = "#ffe14d";
+                    ctx.font = "bold 38px 'Courier New', monospace";
+                    ctx.shadowColor = "#ffe14d";
+                    ctx.shadowBlur = 22;
+                    ctx.fillText("VITÓRIA", CANVAS_W / 2, CANVAS_H / 2 - 40);
+                    ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = "#eafffb";
+                    ctx.font = "bold 22px 'Courier New', monospace";
+                    ctx.fillText(tt.winner.toUpperCase(), CANVAS_W / 2, CANVAS_H / 2 + 4);
+
+                    ctx.fillStyle = "rgba(186,255,242,0.6)";
+                    ctx.font = "13px 'Courier New', monospace";
+                    ctx.fillText(
+                        isHost
+                            ? "ENTER PARA JOGAR NOVAMENTE"
+                            : "AGUARDANDO O HOST REINICIAR",
+                        CANVAS_W / 2,
+                        CANVAS_H / 2 + 44
+                    );
+                }
+            }
+
+            // ── Scanlines, brilho e vinheta ──
+            function drawTTScanlines(now) {
+                const SX = 38;
+                const SY = 16;
+                const SW = CANVAS_W - 76;
+                const SH = CANVAS_H - 32;
+
+                for (let y = SY; y < SY + SH; y += 3) {
+                    ctx.fillStyle = "rgba(0,0,0,0.16)";
+                    ctx.fillRect(SX, y, SW, 1);
+                }
+
+                const bandY = SY + ((now * 0.035) % SH);
+                const band = ctx.createLinearGradient(0, bandY - 12, 0, bandY + 12);
+                band.addColorStop(0, "rgba(120,255,220,0)");
+                band.addColorStop(0.5, "rgba(120,255,220,0.045)");
+                band.addColorStop(1, "rgba(120,255,220,0)");
+                ctx.fillStyle = band;
+                ctx.fillRect(SX, bandY - 12, SW, 24);
+
+                const vig = ctx.createRadialGradient(400, 250, 110, 400, 250, 430);
+                vig.addColorStop(0, "rgba(0,0,0,0)");
+                vig.addColorStop(0.7, "rgba(0,0,0,0.18)");
+                vig.addColorStop(1, "rgba(0,0,0,0.72)");
+                ctx.fillStyle = vig;
+                ctx.fillRect(SX, SY, SW, SH);
+
+                // Flicker sutil
+                const flicker = 0.012 + Math.sin(now / 47) * 0.006;
+                ctx.fillStyle = `rgba(120,255,220,${flicker})`;
+                ctx.fillRect(SX, SY, SW, SH);
+            }
+
+            function drawTTBezelDetails(now) {
+                const screws = [
+                    [36, 26],
+                    [CANVAS_W - 36, 26],
+                    [36, CANVAS_H - 26],
+                    [CANVAS_W - 36, CANVAS_H - 26]
+                ];
+
+                for (const [x, y] of screws) {
+                    ctx.fillStyle = "#0d1211";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = "#394641";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(x - 2, y);
+                    ctx.lineTo(x + 2, y);
+                    ctx.stroke();
+                }
+
+                const on = Math.sin(now / 500) > 0;
+                ctx.fillStyle = on ? "#ff2a2a" : "#4a0a0a";
+                ctx.shadowColor = "#ff2a2a";
+                ctx.shadowBlur = on ? 12 : 0;
+                ctx.beginPath();
+                ctx.arc(CANVAS_W - 52, CANVAS_H - 22, 3, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.shadowBlur = 0;
 
-                ctx.fillStyle = "rgba(0,0,0,0.3)";
-                ctx.beginPath();
-                ctx.arc(x, y, TT.PADDLE_R * 0.55, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.fillStyle = "rgba(186,255,242,0.22)";
+                ctx.font = "9px 'Courier New', monospace";
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                ctx.fillText("TENNIS FOR TWO", CANVAS_W - 66, CANVAS_H - 21);
             }
 
             // ══════════════════════════════════════
@@ -2073,12 +2915,7 @@
                     tt.gameOver &&
                     connected
                 ) {
-                    tt.score1 = 0;
-                    tt.score2 = 0;
-                    tt.gameOver = false;
-                    tt.winner = "";
-                    updateScoreDisplay();
-                    resetTTBall();
+                    resetTTMatch(false);
                     broadcastTTState();
                 }
             });
@@ -2118,22 +2955,16 @@
                 return Math.max(min, Math.min(max, val));
             }
 
-            function distToSegment(px, py, x1, y1, x2, y2) {
-                const dx = x2 - x1;
-                const dy = y2 - y1;
-                const len2 = dx * dx + dy * dy;
+            function roundRectPath(x, y, w, h, r) {
+                const rr = Math.min(r, w / 2, h / 2);
 
-                if (len2 === 0) {
-                    return Math.hypot(px - x1, py - y1);
-                }
-
-                let t = ((px - x1) * dx + (py - y1) * dy) / len2;
-                t = Math.max(0, Math.min(1, t));
-
-                const cx = x1 + t * dx;
-                const cy = y1 + t * dy;
-
-                return Math.hypot(px - cx, py - cy);
+                ctx.beginPath();
+                ctx.moveTo(x + rr, y);
+                ctx.arcTo(x + w, y, x + w, y + h, rr);
+                ctx.arcTo(x + w, y + h, x, y + h, rr);
+                ctx.arcTo(x, y + h, x, y, rr);
+                ctx.arcTo(x, y, x + w, y, rr);
+                ctx.closePath();
             }
 
             // ══════════════════════════════════════
@@ -2144,7 +2975,13 @@
             updateScoreDisplay();
             updateNameDisplays();
             resetBall();
-            resetTTBall();
+            resetTTMatch(true);
+
+            // Link direto para o Tênis: index.html?game=tt
+            const gameFromUrl = urlParams.get("game");
+            if (gameFromUrl === "tt" || gameFromUrl === "tableTennis") {
+                switchMinigame("tableTennis", false);
+            }
 
             requestAnimationFrame(gameLoop);
 
